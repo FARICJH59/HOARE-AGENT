@@ -232,6 +232,39 @@ function EventLog() {
   )
 }
 
+function GatewayPanel() {
+  const { apiKey, setApiKey, fetchSchemas, fetchUsage, fetchAuditSummary, usageSummary, auditSummary } = usePipelineStore()
+  const [draftKey, setDraftKey] = useState(apiKey)
+
+  async function applyKey() {
+    setApiKey(draftKey)
+    await fetchSchemas()
+    await fetchUsage()
+    await fetchAuditSummary()
+  }
+
+  return (
+    <div style={S.section}>
+      <div style={S.label}>🔐 API Gateway</div>
+      <input
+        style={S.input}
+        value={draftKey}
+        onChange={(e) => setDraftKey(e.target.value)}
+        placeholder="x-api-key"
+      />
+      <button style={S.btn(false)} onClick={applyKey}>
+        Save API key
+      </button>
+      <div style={{ marginTop: 8, fontSize: 11, color: '#8b949e', lineHeight: 1.5 }}>
+        Requests: {usageSummary?.requests_total ?? 0} · Usage units: {usageSummary?.usage_units_total ?? 0}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 11, color: '#8b949e' }}>
+        Audit events sampled: {auditSummary?.events_sampled ?? 0}
+      </div>
+    </div>
+  )
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 export default function StatePanel() {
   const { backendOnline } = usePipelineStore()
@@ -246,6 +279,7 @@ export default function StatePanel() {
         </span>
       </div>
 
+      <GatewayPanel />
       <AgentTaskPanel />
       <VerifyPanel />
       <EventLog />

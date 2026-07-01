@@ -270,6 +270,69 @@ See [`action/action.yml`](action/action.yml) for all available inputs.
 
 ---
 
+## Week 3 — SaaS Productization
+
+### 1) Cloud workers + autoscaling deployment
+
+The repository now includes a cloud-worker deployment blueprint with autoscaling:
+
+- `/home/runner/work/HOARE-AGENT/HOARE-AGENT/deploy/cloud-workers/cloudrun-service.yaml`
+
+This profile is designed for stateless backend replicas behind a managed gateway.
+
+### 2) API gateway authentication + usage metering
+
+The backend HTTP service now supports API-key authentication and tenant-level metering.
+
+Set these environment variables:
+
+| Variable | Description |
+|---|---|
+| `HOARE_REQUIRE_AUTH` | `1` to enforce authentication on all protected API routes |
+| `HOARE_API_KEYS` | JSON map of API keys to tenant metadata |
+| `HOARE_USAGE_UNIT_PRICE_CENTS` | Usage-unit price for estimated billing totals |
+
+Example `HOARE_API_KEYS`:
+
+```json
+{
+  "dev-key-tenant-a": { "tenant_id": "tenant-a", "plan": "pro" },
+  "dev-key-tenant-b": { "tenant_id": "tenant-b", "plan": "starter" }
+}
+```
+
+### 3) Stripe billing for subscription + usage pricing
+
+Set `STRIPE_API_KEY` to enable live Stripe Checkout session creation.
+
+Without `STRIPE_API_KEY`, billing endpoints run in safe mock mode for local development.
+
+### 4) Multi-tenant schema registry isolation
+
+Schemas are now tenant-scoped through the registry API:
+
+- `POST /tenants/provision`
+- `GET /tenants/{tenant_id}/schemas`
+- `GET /schemas` (returns schemas allowed for the authenticated tenant)
+
+### 5) Structured JSON audit logging + dashboard visibility
+
+Every request emits a structured audit JSON event. Dashboard sidebar now includes:
+
+- API key entry for gateway auth
+- Usage totals (`/usage/me`)
+- Audit summary (`/audit/summary`)
+
+### 6) SaaS onboarding quick flow
+
+1. Provision API keys and tenants via environment variables / tenant API.
+2. Configure frontend with tenant API key.
+3. Create subscription checkout session (`POST /billing/checkout`).
+4. Report usage units (`POST /billing/usage`) for metered pricing.
+5. Monitor tenant activity via `/audit/events` and dashboard metrics.
+
+---
+
 ## Running Tests
 
 ```bash

@@ -307,20 +307,40 @@ class GrammarRegistry:
 
     def __init__(self) -> None:
         self._grammars: Dict[str, SchemaGrammar] = {}
+        self._tenant_schemas: Dict[str, Set[str]] = {"public": set()}
 
     def register(self, model_class: Type[BaseModel], schema_name: str) -> SchemaGrammar:
         grammar = SchemaGrammar(model_class, schema_name)
         self._grammars[schema_name] = grammar
+        self._tenant_schemas.setdefault("public", set()).add(schema_name)
         return grammar
 
-    def get(self, schema_name: str) -> SchemaGrammar:
+    def provision_tenant(self, tenant_id: str, schemas: Optional[List[str]] = None) -> List[str]:
+        allowed = set(self._grammars.keys()) if schemas is None else set(schemas)
+        unknown = allowed - set(self._grammars.keys())
+        if unknown:
+            raise KeyError(f"Unknown schemas for tenant '{tenant_id}': {sorted(unknown)}")
+        self._tenant_schemas[tenant_id] = allowed
+        return sorted(allowed)
+
+    def list_schemas(self, tenant_id: str = "public") -> List[str]:
+        if tenant_id in self._tenant_schemas:
+            return sorted(self._tenant_schemas[tenant_id])
+        return sorted(self._tenant_schemas.get("public", set()))
+
+    def get(self, schema_name: str, tenant_id: str = "public") -> SchemaGrammar:
+        allowed = set(self.list_schemas(tenant_id))
+        if schema_name not in allowed:
+            raise KeyError(
+                f"Schema '{schema_name}' is not allowed for tenant '{tenant_id}'"
+            )
         try:
             return self._grammars[schema_name]
         except KeyError:
             raise KeyError(f"Schema '{schema_name}' is not registered") from None
 
-    def make_controller(self, payload_id: str, schema_name: str) -> PDAController:
-        return PDAController(payload_id, self.get(schema_name))
+    def make_controller(self, payload_id: str, schema_name: str, tenant_id: str = "public") -> PDAController:
+        return PDAController(payload_id, self.get(schema_name, tenant_id=tenant_id))
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ import json
 import logging
 import os
 import time
+from urllib.parse import parse_qs
 from typing import AsyncIterator
 
 from schema.models import (
@@ -50,12 +51,34 @@ from schema.models import (
 from hoare_engine.agent     import HoareAgent, AgentObserver
 from hoare_engine.pda_engine import registry
 from hoare_engine.verifier   import verifier
+from saas.audit import AuditLogger
+from saas.auth import ApiKeyAuthenticator, AuthContext
+from saas.billing import BillingService
+from saas.usage import UsageMeter
 
 logger = logging.getLogger(__name__)
 
 _GRPC_PORT     = int(os.getenv("HOARE_GRPC_PORT",    "50051"))
 _HTTP_PORT     = int(os.getenv("HOARE_HTTP_PORT",    "8080"))
 _USE_MOCK_LLM  = os.getenv("HOARE_USE_MOCK_LLM",    "0") == "1"
+_PUBLIC_PATHS = {"/health"}
+
+
+def _bearer_key_from_header(authz_header: str | None) -> str | None:
+    if not authz_header:
+        return None
+    if not authz_header.startswith("Bearer "):
+        return None
+    return authz_header[len("Bearer ") :].strip() or None
+
+
+def _query_limit(query_string: str, default: int = 100) -> int:
+    parsed = parse_qs(query_string or "")
+    value = parsed.get("limit", [str(default)])[0]
+    try:
+        return max(1, min(int(value), 500))
+    except ValueError:
+        return default
 
 # ---------------------------------------------------------------------------
 # Service implementations
@@ -65,10 +88,10 @@ _USE_MOCK_LLM  = os.getenv("HOARE_USE_MOCK_LLM",    "0") == "1"
 class SchemaParserServicer:
     """Implements SchemaParserService."""
 
-    async def parse_payload(self, raw: RawPayload) -> ParsedRecord:
+    async def parse_payload(self, raw: RawPayload, tenant_id: str = "public") -> ParsedRecord:
         schema_name = raw.metadata.get("schema", "TelemetryEvent")
         try:
-            controller = registry.make_controller(raw.payload_id, schema_name)
+            controller = registry.make_controller(raw.payload_id, schema_name, tenant_id=tenant_id)
         except KeyError:
             return ParsedRecord(
                 payload_id=raw.payload_id,
@@ -91,9 +114,9 @@ class SchemaParserServicer:
             yield await self.parse_payload(raw)
 
     async def transition_fsm(
-        self, payload_id: str, schema_name: str, target: FSMStateEnum
+        self, payload_id: str, schema_name: str, target: FSMStateEnum, tenant_id: str = "public"
     ) -> FSMState:
-        controller = registry.make_controller(payload_id, schema_name)
+        controller = registry.make_controller(payload_id, schema_name, tenant_id=tenant_id)
         return controller.transition(target)
 
 
@@ -133,7 +156,8 @@ class HoareAgentServicer:
 
     async def watch_fsm(self, raw: RawPayload) -> AsyncIterator[FSMState]:
         schema_name = raw.metadata.get("schema", "TelemetryEvent")
-        controller  = registry.make_controller(raw.payload_id, schema_name)
+        tenant_id = raw.metadata.get("tenant_id", "public")
+        controller  = registry.make_controller(raw.payload_id, schema_name, tenant_id=tenant_id)
 
         states = [
             FSMStateEnum.INGESTING,
@@ -167,9 +191,15 @@ async def _start_http_server() -> None:
         logger.warning("aiohttp not installed — HTTP server disabled.  pip install aiohttp")
         return
 
-    parser_svc  = SchemaParserServicer()
+    parser_svc = SchemaParserServicer()
     verifier_svc = HoareVerifierServicer()
-    agent_svc   = HoareAgentServicer()
+    agent_svc = HoareAgentServicer()
+    authenticator = ApiKeyAuthenticator()
+    usage_meter = UsageMeter()
+    billing = BillingService(usage_meter)
+    audit = AuditLogger()
+
+    registry.provision_tenant("public", registry.list_schemas("public"))
 
     routes = web.RouteTableDef()
 
@@ -180,8 +210,11 @@ async def _start_http_server() -> None:
     @routes.post("/parse")
     async def parse(req: web.Request) -> web.Response:
         body = await req.json()
-        raw  = RawPayload(**body)
-        rec  = await parser_svc.parse_payload(raw)
+        auth_ctx: AuthContext = req["auth_ctx"]
+        body.setdefault("metadata", {})
+        body["metadata"]["tenant_id"] = auth_ctx.tenant_id
+        raw = RawPayload(**body)
+        rec = await parser_svc.parse_payload(raw, tenant_id=auth_ctx.tenant_id)
         return web.json_response(rec.model_dump(mode="json"))
 
     @routes.post("/verify")
@@ -193,8 +226,8 @@ async def _start_http_server() -> None:
 
     @routes.post("/agent/run")
     async def run_agent(req: web.Request) -> web.Response:
-        body    = await req.json()
-        areq    = AgentTaskRequest(**body)
+        body = await req.json()
+        areq = AgentTaskRequest(**body)
         result, states = await agent_svc.run_task(areq)
         return web.json_response({
             "result": result.model_dump(mode="json"),
@@ -202,26 +235,103 @@ async def _start_http_server() -> None:
         })
 
     @routes.get("/schemas")
-    async def list_schemas(_req: web.Request) -> web.Response:
-        return web.json_response(list(registry._grammars.keys()))
+    async def list_schemas(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        return web.json_response(registry.list_schemas(auth_ctx.tenant_id))
+
+    @routes.post("/tenants/provision")
+    async def provision_tenant(req: web.Request) -> web.Response:
+        body = await req.json()
+        tenant_id = body["tenant_id"]
+        schemas = body.get("schemas")
+        allowed = registry.provision_tenant(tenant_id, schemas=schemas)
+        return web.json_response({"tenant_id": tenant_id, "schemas": allowed})
+
+    @routes.get("/tenants/{tenant_id}/schemas")
+    async def tenant_schemas(req: web.Request) -> web.Response:
+        tenant_id = req.match_info["tenant_id"]
+        return web.json_response({"tenant_id": tenant_id, "schemas": registry.list_schemas(tenant_id)})
+
+    @routes.get("/usage/me")
+    async def usage_me(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        return web.json_response(usage_meter.summary(auth_ctx.tenant_id))
+
+    @routes.post("/billing/usage")
+    async def bill_usage(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        body = await req.json()
+        units = int(body.get("units", 0))
+        result = billing.report_usage(auth_ctx.tenant_id, units)
+        return web.json_response(result)
+
+    @routes.post("/billing/checkout")
+    async def billing_checkout(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        body = await req.json()
+        result = billing.create_checkout_session(
+            tenant_id=auth_ctx.tenant_id,
+            price_id=body["price_id"],
+            success_url=body["success_url"],
+            cancel_url=body["cancel_url"],
+        )
+        return web.json_response(result)
+
+    @routes.get("/audit/events")
+    async def audit_events(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        limit = _query_limit(req.query_string, default=100)
+        return web.json_response(audit.recent(tenant_id=auth_ctx.tenant_id, limit=limit))
+
+    @routes.get("/audit/summary")
+    async def audit_summary(req: web.Request) -> web.Response:
+        auth_ctx: AuthContext = req["auth_ctx"]
+        return web.json_response(audit.summary(tenant_id=auth_ctx.tenant_id))
 
     # CORS middleware so the React dashboard can reach the server
-    async def cors_middleware(app, handler):  # noqa: ANN001
-        async def middleware(request: web.Request) -> web.Response:
+    @web.middleware
+    async def api_gateway_middleware(request: web.Request, handler):  # noqa: ANN001
+        start = time.time()
+        try:
             if request.method == "OPTIONS":
-                return web.Response(
-                    headers={
-                        "Access-Control-Allow-Origin":  "*",
-                        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                        "Access-Control-Allow-Headers": "Content-Type",
-                    }
-                )
-            response = await handler(request)
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            return response
-        return middleware
+                response = web.Response()
+            else:
+                if request.path in _PUBLIC_PATHS:
+                    auth_ctx = AuthContext(tenant_id="public", api_key_id="public", plan="public")
+                else:
+                    auth_ctx = authenticator.authenticate(
+                        header_key=request.headers.get("x-api-key"),
+                        bearer_key=_bearer_key_from_header(request.headers.get("Authorization")),
+                    )
+                request["auth_ctx"] = auth_ctx
+                response = await handler(request)
+        except PermissionError as exc:
+            response = web.json_response({"error": str(exc)}, status=401)
+            request["auth_ctx"] = AuthContext(tenant_id="unknown", api_key_id="unauthorized")
+        except KeyError as exc:
+            response = web.json_response({"error": str(exc)}, status=404)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unhandled request error")
+            response = web.json_response({"error": str(exc)}, status=500)
 
-    app = web.Application(middlewares=[cors_middleware])
+        tenant_id = request.get("auth_ctx", AuthContext("public", "public")).tenant_id
+        if request.path not in _PUBLIC_PATHS:
+            usage_meter.record_request(tenant_id, request.path)
+        audit.log(
+            event_type="http_request",
+            tenant_id=tenant_id,
+            actor=request.get("auth_ctx", AuthContext("public", "public")).api_key_id,
+            method=request.method,
+            path=request.path,
+            status=response.status,
+            elapsed_ms=round((time.time() - start) * 1000, 2),
+        )
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, x-api-key"
+        return response
+
+    app = web.Application(middlewares=[api_gateway_middleware])
     app.add_routes(routes)
 
     runner = web.AppRunner(app)

@@ -8,6 +8,15 @@ import { create } from 'zustand'
 import axios from 'axios'
 
 const API = '/api'
+const apiClient = axios.create({ baseURL: API })
+
+apiClient.interceptors.request.use((config) => {
+  const apiKey = localStorage.getItem('hoareApiKey')
+  if (apiKey) {
+    config.headers['x-api-key'] = apiKey
+  }
+  return config
+})
 
 export const FSM_STATE_COLORS = {
   IDLE:       '#6e7681',
@@ -47,6 +56,9 @@ export const usePipelineStore = create((set, get) => ({
   agentTasks:  [],        // [{task_id, success, iterations, …}]
   backendOnline: false,
   schemas: [],
+  apiKey: localStorage.getItem('hoareApiKey') ?? '',
+  usageSummary: null,
+  auditSummary: null,
 
   // ── Actions ────────────────────────────────────────────────────────────
   checkHealth: async () => {
@@ -55,17 +67,42 @@ export const usePipelineStore = create((set, get) => ({
       if (!get().backendOnline) {
         set({ backendOnline: true })
         get().fetchSchemas()
+        get().fetchUsage()
+        get().fetchAuditSummary()
       }
     } catch {
       set({ backendOnline: false })
     }
   },
 
+  setApiKey: (apiKey) => {
+    localStorage.setItem('hoareApiKey', apiKey)
+    set({ apiKey })
+  },
+
   fetchSchemas: async () => {
     try {
-      const res = await axios.get(`${API}/schemas`)
+      const res = await apiClient.get(`/schemas`)
       set({ schemas: res.data })
     } catch { /* ignore */ }
+  },
+
+  fetchUsage: async () => {
+    try {
+      const res = await apiClient.get('/usage/me')
+      set({ usageSummary: res.data })
+    } catch {
+      set({ usageSummary: null })
+    }
+  },
+
+  fetchAuditSummary: async () => {
+    try {
+      const res = await apiClient.get('/audit/summary')
+      set({ auditSummary: res.data })
+    } catch {
+      set({ auditSummary: null })
+    }
   },
 
   parsePayload: async (sourceName, rawData, schema = 'TelemetryEvent') => {
@@ -75,7 +112,7 @@ export const usePipelineStore = create((set, get) => ({
       metadata:    { schema },
     }
     try {
-      const res = await axios.post(`${API}/parse`, payload)
+      const res = await apiClient.post(`/parse`, payload)
       const rec = res.data
       set((s) => ({
         fsmEvents: [
@@ -91,7 +128,7 @@ export const usePipelineStore = create((set, get) => ({
 
   runAgentTask: async (description, schemaJson) => {
     try {
-      const res = await axios.post(`${API}/agent/run`, {
+      const res = await apiClient.post(`/agent/run`, {
         description,
         target_schema: schemaJson,
         max_retries: 3,
@@ -109,7 +146,7 @@ export const usePipelineStore = create((set, get) => ({
 
   verifyTriple: async (precondition, program, postcondition, loopInvariants = []) => {
     try {
-      const res = await axios.post(`${API}/verify`, {
+      const res = await apiClient.post(`/verify`, {
         triple: { precondition, program, postcondition, loop_invariants: loopInvariants },
       })
       return res.data
