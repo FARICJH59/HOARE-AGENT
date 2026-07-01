@@ -35,7 +35,7 @@ const S = {
 }
 
 function RepairLoopCard() {
-  const latestTask = usePipelineStore((s) => s.agentTasks[0])
+  const latestTask = usePipelineStore((s) => s.agentTasks?.[0])
   const trace = latestTask?.repair_trace ?? []
 
   return (
@@ -56,7 +56,7 @@ function RepairLoopCard() {
 }
 
 function ProofLogCard() {
-  const latestTask = usePipelineStore((s) => s.agentTasks[0])
+  const latestTask = usePipelineStore((s) => s.agentTasks?.[0])
   const trace = latestTask?.repair_trace ?? []
 
   return (

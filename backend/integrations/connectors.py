@@ -16,6 +16,8 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List
 
+READINESS_THRESHOLD = 0.5
+
 
 @dataclass(frozen=True)
 class ConnectorSpec:
@@ -82,7 +84,7 @@ class ConnectorRegistry:
             "description": spec.description,
             "required_env": spec.env_keys,
             "configured_env": configured,
-            "ready": readiness_ratio >= 0.5,
+            "ready": readiness_ratio >= READINESS_THRESHOLD,
             "readiness_score": round(readiness_ratio, 2),
         }
 

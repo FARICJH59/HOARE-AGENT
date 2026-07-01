@@ -245,6 +245,10 @@ class TestHoareAgent:
         assert result.iterations >= 1
         assert len(result.repair_trace) >= 1
         assert result.repair_trace[0]["attempt"] == 1
+        assert "verdict" in result.repair_trace[0]
+        assert "counterexample" in result.repair_trace[0]
+        assert "error_detail" in result.repair_trace[0]
+        assert "elapsed_ms" in result.repair_trace[0]
 
     def test_agent_task_id_preserved(self):
         import json
