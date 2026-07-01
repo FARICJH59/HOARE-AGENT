@@ -333,6 +333,36 @@ Every request emits a structured audit JSON event. Dashboard sidebar now include
 
 ---
 
+## Week 4 — Integration + Enterprise Operations
+
+### 1) Tech Fusion Grid dashboard module
+
+The frontend now includes a **Tech Fusion Grid** side panel that surfaces:
+
+- Proof logs from the Hoare verification lifecycle
+- Schema registry visibility
+- FSM transition viewer
+- Agent repair loop attempt visualization
+- Ecosystem connector readiness checks
+
+### 2) Ecosystem connector support
+
+New backend connector registry and validation APIs cover:
+
+- LangGraph
+- CrewAI
+- AutoGen
+- Airflow
+- Dagster
+- IoT MQTT / EMQX
+
+### 3) Enterprise guides and playbooks
+
+- Integration guide: [`docs/week4-integration-guide.md`](docs/week4-integration-guide.md)
+- Enterprise playbooks: [`docs/enterprise-playbooks.md`](docs/enterprise-playbooks.md)
+
+---
+
 ## Running Tests
 
 ```bash
@@ -445,6 +475,8 @@ python -m grpc_tools.protoc \
 | POST   | `/parse`       | `RawPayload` → `ParsedRecord`                |
 | POST   | `/verify`      | `VerificationRequest` → `VerificationResult` |
 | POST   | `/agent/run`   | `AgentTaskRequest` → `{ result, fsm_states }`|
+| GET    | `/integrations/connectors` | Connector readiness inventory |
+| GET    | `/integrations/connectors/{name}/validate` | Connector-specific readiness check |
 
 ---
 

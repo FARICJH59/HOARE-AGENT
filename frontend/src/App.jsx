@@ -12,6 +12,7 @@
 import React, { useEffect } from 'react'
 import NodeMap    from './components/NodeMap.jsx'
 import StatePanel from './components/StatePanel.jsx'
+import TechFusionGrid from './components/TechFusionGrid.jsx'
 import { usePipelineStore } from './store.js'
 
 export default function App() {
@@ -53,6 +54,7 @@ export default function App() {
           <NodeMap />
         </div>
         <StatePanel />
+        <TechFusionGrid />
       </div>
     </div>
   )

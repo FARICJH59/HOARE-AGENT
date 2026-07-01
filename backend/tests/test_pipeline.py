@@ -38,6 +38,7 @@ from schema.models import AgentTaskRequest, TelemetryEvent
 from saas.auth import ApiKeyAuthenticator
 from saas.billing import BillingService
 from saas.usage import UsageMeter
+from integrations.connectors import connector_registry
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -213,6 +214,13 @@ class TestSaaSServices:
         assert out["estimated_amount_cents"] > 0
 
 
+class TestEcosystemConnectors:
+    def test_connector_registry_lists_week4_connectors(self):
+        connectors = connector_registry.list_connectors()
+        names = {c["name"] for c in connectors}
+        assert {"langgraph", "crewai", "autogen", "airflow", "dagster", "mqtt-emqx"} <= names
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent Tests (mock LLM)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -235,6 +243,12 @@ class TestHoareAgent:
         assert result.proof is not None
         assert result.proof.verified
         assert result.iterations >= 1
+        assert len(result.repair_trace) >= 1
+        assert result.repair_trace[0]["attempt"] == 1
+        assert "verdict" in result.repair_trace[0]
+        assert "counterexample" in result.repair_trace[0]
+        assert "error_detail" in result.repair_trace[0]
+        assert "elapsed_ms" in result.repair_trace[0]
 
     def test_agent_task_id_preserved(self):
         import json

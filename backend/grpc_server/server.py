@@ -55,6 +55,7 @@ from saas.audit import AuditLogger
 from saas.auth import ApiKeyAuthenticator, AuthContext
 from saas.billing import BillingService
 from saas.usage import UsageMeter
+from integrations import connector_registry
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +289,15 @@ async def _start_http_server() -> None:
     async def audit_summary(req: web.Request) -> web.Response:
         auth_ctx: AuthContext = req["auth_ctx"]
         return web.json_response(audit.summary(tenant_id=auth_ctx.tenant_id))
+
+    @routes.get("/integrations/connectors")
+    async def list_connectors(_req: web.Request) -> web.Response:
+        return web.json_response(connector_registry.list_connectors())
+
+    @routes.get("/integrations/connectors/{name}/validate")
+    async def validate_connector(req: web.Request) -> web.Response:
+        name = req.match_info["name"]
+        return web.json_response(connector_registry.validate(name))
 
     # CORS middleware so the React dashboard can reach the server
     @web.middleware
