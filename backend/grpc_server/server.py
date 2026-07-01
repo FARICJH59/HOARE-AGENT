@@ -62,6 +62,7 @@ _GRPC_PORT     = int(os.getenv("HOARE_GRPC_PORT",    "50051"))
 _HTTP_PORT     = int(os.getenv("HOARE_HTTP_PORT",    "8080"))
 _USE_MOCK_LLM  = os.getenv("HOARE_USE_MOCK_LLM",    "0") == "1"
 _PUBLIC_PATHS = {"/health"}
+_DEFAULT_AUTH_CTX = AuthContext(tenant_id="public", api_key_id="public", plan="public")
 
 
 def _bearer_key_from_header(authz_header: str | None) -> str | None:
@@ -292,12 +293,13 @@ async def _start_http_server() -> None:
     @web.middleware
     async def api_gateway_middleware(request: web.Request, handler):  # noqa: ANN001
         start = time.time()
+        auth_ctx = _DEFAULT_AUTH_CTX
         try:
             if request.method == "OPTIONS":
                 response = web.Response()
             else:
                 if request.path in _PUBLIC_PATHS:
-                    auth_ctx = AuthContext(tenant_id="public", api_key_id="public", plan="public")
+                    auth_ctx = _DEFAULT_AUTH_CTX
                 else:
                     auth_ctx = authenticator.authenticate(
                         header_key=request.headers.get("x-api-key"),
@@ -306,21 +308,24 @@ async def _start_http_server() -> None:
                 request["auth_ctx"] = auth_ctx
                 response = await handler(request)
         except PermissionError as exc:
+            auth_ctx = AuthContext(tenant_id="unknown", api_key_id="unauthorized")
+            request["auth_ctx"] = auth_ctx
             response = web.json_response({"error": str(exc)}, status=401)
-            request["auth_ctx"] = AuthContext(tenant_id="unknown", api_key_id="unauthorized")
         except KeyError as exc:
             response = web.json_response({"error": str(exc)}, status=404)
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.exception("Unhandled request error")
             response = web.json_response({"error": str(exc)}, status=500)
 
-        tenant_id = request.get("auth_ctx", AuthContext("public", "public")).tenant_id
+        tenant_id = auth_ctx.tenant_id
         if request.path not in _PUBLIC_PATHS:
             usage_meter.record_request(tenant_id, request.path)
         audit.log(
             event_type="http_request",
             tenant_id=tenant_id,
-            actor=request.get("auth_ctx", AuthContext("public", "public")).api_key_id,
+            actor=auth_ctx.api_key_id,
             method=request.method,
             path=request.path,
             status=response.status,

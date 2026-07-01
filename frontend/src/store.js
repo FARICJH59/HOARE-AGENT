@@ -9,11 +9,11 @@ import axios from 'axios'
 
 const API = '/api'
 const apiClient = axios.create({ baseURL: API })
+let runtimeApiKey = ''
 
 apiClient.interceptors.request.use((config) => {
-  const apiKey = localStorage.getItem('hoareApiKey')
-  if (apiKey) {
-    config.headers['x-api-key'] = apiKey
+  if (runtimeApiKey) {
+    config.headers['x-api-key'] = runtimeApiKey
   }
   return config
 })
@@ -56,7 +56,7 @@ export const usePipelineStore = create((set, get) => ({
   agentTasks:  [],        // [{task_id, success, iterations, …}]
   backendOnline: false,
   schemas: [],
-  apiKey: localStorage.getItem('hoareApiKey') ?? '',
+  apiKey: '',
   usageSummary: null,
   auditSummary: null,
 
@@ -76,7 +76,7 @@ export const usePipelineStore = create((set, get) => ({
   },
 
   setApiKey: (apiKey) => {
-    localStorage.setItem('hoareApiKey', apiKey)
+    runtimeApiKey = apiKey
     set({ apiKey })
   },
 

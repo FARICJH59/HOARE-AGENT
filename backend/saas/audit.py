@@ -8,6 +8,21 @@ from threading import Lock
 from typing import Any, Deque, Dict, List
 
 logger = logging.getLogger("audit")
+_REDACT_KEYS = {"password", "api_key", "authorization", "token", "secret"}
+
+
+def _sanitize(value: Any) -> Any:
+    if isinstance(value, dict):
+        clean = {}
+        for key, item in value.items():
+            if str(key).lower() in _REDACT_KEYS:
+                clean[key] = "***REDACTED***"
+            else:
+                clean[key] = _sanitize(item)
+        return clean
+    if isinstance(value, list):
+        return [_sanitize(v) for v in value]
+    return value
 
 
 class AuditLogger:
@@ -22,12 +37,23 @@ class AuditLogger:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "event_type": event_type,
             "tenant_id": tenant_id,
-            "actor": actor,
-            "details": details,
+            "actor": "***",
+            "details": _sanitize(details),
         }
         with self._lock:
             self._events.appendleft(event)
-        logger.info(json.dumps(event, sort_keys=True))
+        logger.info(
+            json.dumps(
+                {
+                    "timestamp": event["timestamp"],
+                    "event_type": event["event_type"],
+                    "tenant_id": event["tenant_id"],
+                    "actor": event["actor"],
+                    "detail_keys": sorted(event["details"].keys()),
+                },
+                sort_keys=True,
+            )
+        )
         return event
 
     def recent(self, tenant_id: str | None = None, limit: int = 100) -> List[Dict[str, Any]]:
@@ -48,4 +74,3 @@ class AuditLogger:
             "events_sampled": len(events),
             "event_type_counts": counts,
         }
-

@@ -276,7 +276,7 @@ See [`action/action.yml`](action/action.yml) for all available inputs.
 
 The repository now includes a cloud-worker deployment blueprint with autoscaling:
 
-- `/home/runner/work/HOARE-AGENT/HOARE-AGENT/deploy/cloud-workers/cloudrun-service.yaml`
+- `deploy/cloud-workers/cloudrun-service.yaml`
 
 This profile is designed for stateless backend replicas behind a managed gateway.
 
