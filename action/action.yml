@@ -1,0 +1,104 @@
+name: "HOARE-AGENT Verify"
+description: >
+  Formally verify Python functions annotated with Hoare logic pre/post-conditions
+  using the Z3 SMT solver.  Fails the CI step when any triple cannot be proved.
+
+author: "FARICJH59"
+
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  path:
+    description: >
+      Glob pattern or path to the Python file(s) to verify.
+      Supports multiple space-separated patterns.
+    required: false
+    default: "**/*.py"
+  pre:
+    description: >
+      Override pre-condition for all files (optional).
+      When omitted, conditions are read from function docstrings.
+    required: false
+    default: ""
+  post:
+    description: >
+      Override post-condition for all files (optional).
+    required: false
+    default: ""
+  timeout_ms:
+    description: "Z3 solver timeout per triple, in milliseconds."
+    required: false
+    default: "5000"
+  python_version:
+    description: "Python version to use."
+    required: false
+    default: "3.11"
+  fail_on_error:
+    description: >
+      Set to 'false' to report results without failing the workflow step.
+    required: false
+    default: "true"
+  sdk_ref:
+    description: >
+      Git ref (branch, tag, or SHA) of the HOARE-AGENT repository to install
+      the SDK from.  Defaults to the same commit that triggered the action.
+    required: false
+    default: ""
+
+outputs:
+  verified:
+    description: "'true' when all triples passed, 'false' otherwise."
+    value: ${{ steps.verify.outputs.verified }}
+  summary:
+    description: "Human-readable summary of the verification run."
+    value: ${{ steps.verify.outputs.summary }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python ${{ inputs.python_version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install hoare-agent SDK
+      shell: bash
+      run: |
+        # Resolve SDK source: local checkout (when action is used from within
+        # the repo) or install from the repository archive.
+        SDK_PATH="${GITHUB_ACTION_PATH}/../sdk/python"
+        if [ -d "$SDK_PATH" ]; then
+          echo "Installing hoare-agent SDK from local path: $SDK_PATH"
+          pip install --quiet "$SDK_PATH"
+        else
+          # Fallback: install directly from GitHub
+          REF="${{ inputs.sdk_ref }}"
+          if [ -z "$REF" ]; then
+            REF="${GITHUB_SHA:-main}"
+          fi
+          echo "Installing hoare-agent SDK from GitHub ref: $REF"
+          pip install --quiet \
+            "git+https://github.com/FARICJH59/HOARE-AGENT.git@${REF}#subdirectory=sdk/python"
+        fi
+
+    - name: Run Hoare verification
+      id: verify
+      shell: bash
+      env:
+        HA_PATH:       ${{ inputs.path }}
+        HA_PRE:        ${{ inputs.pre }}
+        HA_POST:       ${{ inputs.post }}
+        HA_TIMEOUT_MS: ${{ inputs.timeout_ms }}
+      run: |
+        python "${GITHUB_ACTION_PATH}/verify_runner.py"
+
+    - name: Check result
+      if: inputs.fail_on_error == 'true'
+      shell: bash
+      run: |
+        if [ "${{ steps.verify.outputs.verified }}" != "true" ]; then
+          echo "::error::Hoare verification failed. See step output for details."
+          exit 1
+        fi

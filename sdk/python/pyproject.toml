@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hoare-agent"
+version = "0.1.0"
+description = "Formally verify Python functions with Hoare logic and Z3"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["formal-verification", "hoare-logic", "z3", "smt", "static-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "z3-solver>=4.13,<5.0",
+]
+
+[project.optional-dependencies]
+http = ["httpx>=0.27,<1.0"]
+dev = ["pytest>=8.0", "pytest-cov"]
+
+[project.scripts]
+hoare-agent = "hoareagent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/FARICJH59/HOARE-AGENT"
+Repository = "https://github.com/FARICJH59/HOARE-AGENT"
+Issues = "https://github.com/FARICJH59/HOARE-AGENT/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hoareagent*"]

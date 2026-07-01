@@ -1,0 +1,37 @@
+{
+  "name": "hoare-agent",
+  "version": "0.1.0",
+  "description": "Formally verify code with Hoare logic via the HOARE-AGENT backend",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.mjs",
+      "types": "./index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/",
+    "lint": "eslint index.js"
+  },
+  "keywords": [
+    "hoare-logic",
+    "formal-verification",
+    "z3",
+    "smt",
+    "static-analysis"
+  ],
+  "author": "FARICJH59",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FARICJH59/HOARE-AGENT.git",
+    "directory": "sdk/nodejs"
+  },
+  "homepage": "https://github.com/FARICJH59/HOARE-AGENT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
