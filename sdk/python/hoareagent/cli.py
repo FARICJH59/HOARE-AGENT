@@ -189,7 +189,7 @@ def _cmd_verify(args) -> int:  # type: ignore[type-arg]
         )
         return 0
 
-    all_passed = True
+    results = []
     for spec in specs:
         result = verify(
             "",  # conditions only — code body not needed for Z3
@@ -199,17 +199,16 @@ def _cmd_verify(args) -> int:  # type: ignore[type-arg]
         )
         label = f"{spec.name}  (line {spec.lineno})"
         _print_result(label, result)
-        if not result.verified:
-            all_passed = False
+        results.append(result)
 
     print()
-    total = len(specs)
-    passed = sum(1 for s in specs
-                 if verify("", pre=s.pre, post=s.post, timeout_ms=timeout_ms).verified)
+    total  = len(results)
+    passed = sum(1 for r in results if r.verified)
+    failed = total - passed
+    all_passed = failed == 0
     if all_passed:
         print(f"\u2705  All {total} triple(s) verified.")
     else:
-        failed = total - passed
         print(f"\u274c  {failed} of {total} triple(s) failed.")
 
     return 0 if all_passed else 1

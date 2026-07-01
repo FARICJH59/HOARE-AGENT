@@ -159,7 +159,7 @@ async function verify({
 
 /**
  * Wraps an async function and verifies its Hoare triple before first call.
- * Stores the result on `fn.hoarResult`.
+ * Stores the result on `fn.hoareResult`.
  *
  * @param {object}   options
  * @param {string}   [options.pre="True"]
@@ -195,7 +195,7 @@ function verified({
 
     // Expose the promise so callers can await it
     wrapper.verificationReady = resultPromise.then((result) => {
-      wrapper.hoarResult = result;
+      wrapper.hoareResult = result;
       if (raiseOnFailure && !result.verified) {
         throw new Error(
           `Hoare verification failed for ${fn.name || "anonymous"}: ${result}`

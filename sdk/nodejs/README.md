@@ -72,7 +72,7 @@ console.log(verResult.verified); // true
 
 ### `verified(options?) → (fn) → fn`
 
-Decorator factory; attaches `.hoarResult` and `.verificationReady` (Promise)
+Decorator factory; attaches `.hoareResult` and `.verificationReady` (Promise)
 to the wrapped function.  Set `raiseOnFailure: true` to throw on failure.
 
 ## Environment variables
