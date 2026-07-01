@@ -114,6 +114,7 @@ class AgentTaskResult(BaseModel):
     generated_code: str
     triple:         Optional[HoareTriple] = None
     proof:          Optional[VerificationResult] = None
+    repair_trace:   List[Dict[str, Any]] = Field(default_factory=list)
     iterations:     int = 0
     success:        bool = False
     failure_reason: str = ""

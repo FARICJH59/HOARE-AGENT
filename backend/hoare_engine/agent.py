@@ -234,6 +234,7 @@ class HoareAgent:
 
         triple: Optional[HoareTriple] = None
         proof = None
+        repair_trace: List[Dict[str, Any]] = []
 
         for attempt in range(1, request.max_retries + 1):
             self._notify(
@@ -253,6 +254,14 @@ class HoareAgent:
 
             self._notify(FSMStateEnum.VERIFYING, "Pass 2 — running Z3 proof")
             proof = verify_triple(triple)
+            repair_trace.append({
+                "attempt": attempt,
+                "verified": proof.verified,
+                "verdict": proof.verdict.value,
+                "counterexample": proof.counterexample,
+                "error_detail": proof.error_detail,
+                "elapsed_ms": proof.elapsed_ms,
+            })
 
             if proof.verified:
                 self._notify(FSMStateEnum.COMMITTED, "Triple verified — code released")
@@ -261,6 +270,7 @@ class HoareAgent:
                     generated_code=triple.program,
                     triple=triple,
                     proof=proof,
+                    repair_trace=repair_trace,
                     iterations=attempt,
                     success=True,
                 )
@@ -285,6 +295,7 @@ class HoareAgent:
             generated_code=triple.program if triple else "",
             triple=triple,
             proof=proof,
+            repair_trace=repair_trace,
             iterations=request.max_retries,
             success=False,
             failure_reason=(

@@ -59,6 +59,7 @@ export const usePipelineStore = create((set, get) => ({
   apiKey: '',
   usageSummary: null,
   auditSummary: null,
+  connectors: [],
 
   // ── Actions ────────────────────────────────────────────────────────────
   checkHealth: async () => {
@@ -69,6 +70,7 @@ export const usePipelineStore = create((set, get) => ({
         get().fetchSchemas()
         get().fetchUsage()
         get().fetchAuditSummary()
+        get().fetchConnectors()
       }
     } catch {
       set({ backendOnline: false })
@@ -102,6 +104,27 @@ export const usePipelineStore = create((set, get) => ({
       set({ auditSummary: res.data })
     } catch {
       set({ auditSummary: null })
+    }
+  },
+
+  fetchConnectors: async () => {
+    try {
+      const res = await apiClient.get('/integrations/connectors')
+      set({ connectors: res.data })
+    } catch {
+      set({ connectors: [] })
+    }
+  },
+
+  validateConnector: async (name) => {
+    try {
+      const res = await apiClient.get(`/integrations/connectors/${name}/validate`)
+      set((s) => ({
+        connectors: s.connectors.map((c) => (c.name === name ? res.data : c)),
+      }))
+      return res.data
+    } catch (err) {
+      return { name, ready: false, error: String(err) }
     }
   },
 
