@@ -1,0 +1,131 @@
+syntax = "proto3";
+
+package hoare_agent;
+
+// ---------------------------------------------------------------------------
+// HoareAgent gRPC Contract
+// Defines the handshake between AesirGrid's core data bus and the
+// Hoare-Agent schema-parser / verification microservice.
+// ---------------------------------------------------------------------------
+
+// ── Ingestion & Schema Parsing ──────────────────────────────────────────────
+
+message RawPayload {
+  string payload_id  = 1; // UUID of this ingestion event
+  string source_name = 2; // e.g. "aesirgrid_telemetry_bus"
+  bytes  raw_data    = 3; // Raw JSON / msgpack bytes from the upstream source
+  map<string, string> metadata = 4; // Arbitrary key-value context
+}
+
+message ParsedRecord {
+  string payload_id   = 1;
+  string schema_name  = 2; // Validated schema that was applied
+  bytes  structured   = 3; // Fully structured JSON bytes (schema-conformant)
+  FSMState fsm_state  = 4; // State of the constrained grammar FSM
+  bool   valid        = 5;
+  string error        = 6; // Non-empty when valid == false
+}
+
+// ── Hoare Verification ──────────────────────────────────────────────────────
+
+message HoareTriple {
+  string precondition  = 1; // P  — SMT-LIB2 / Python expression
+  string program       = 2; // C  — Python / SQL transformation code
+  string postcondition = 3; // Q  — SMT-LIB2 / Python expression
+  repeated string loop_invariants = 4;
+}
+
+message VerificationRequest {
+  string          request_id = 1;
+  HoareTriple     triple     = 2;
+  int32           timeout_ms = 3; // Z3 solver timeout (default 5 000 ms)
+}
+
+message VerificationResult {
+  string request_id    = 1;
+  bool   verified      = 2; // true  → proof succeeded
+  string verdict       = 3; // "VERIFIED" | "COUNTEREXAMPLE" | "TIMEOUT" | "ERROR"
+  string counterexample = 4; // Non-empty when verdict == "COUNTEREXAMPLE"
+  string error_detail  = 5;
+  int64  elapsed_ms    = 6;
+}
+
+// ── Agent Self-Healing Loop ─────────────────────────────────────────────────
+
+message AgentTaskRequest {
+  string task_id      = 1;
+  string description  = 2; // Natural-language task description
+  string schema_json  = 3; // Target Pydantic / BigQuery schema (JSON)
+  int32  max_retries  = 4; // Max Hoare-refactor iterations (default 3)
+}
+
+message AgentTaskResult {
+  string task_id         = 1;
+  string generated_code  = 2; // Final verified code
+  HoareTriple triple     = 3; // The verified Hoare triple
+  VerificationResult proof = 4;
+  int32  iterations      = 5; // How many refactor loops were needed
+  bool   success         = 6;
+  string failure_reason  = 7;
+}
+
+// ── PDA State Machine ───────────────────────────────────────────────────────
+
+enum FSMStateEnum {
+  IDLE        = 0;
+  INGESTING   = 1;
+  PARSING     = 2;
+  VALIDATING  = 3;
+  VERIFYING   = 4;
+  COMMITTING  = 5;
+  COMMITTED   = 6;
+  BLOCKED     = 7; // Proof failed — agent enters self-healing loop
+  ERROR       = 8;
+}
+
+message FSMState {
+  FSMStateEnum state     = 1;
+  string       payload_id = 2;
+  string       detail    = 3;
+  int64        timestamp_ms = 4;
+}
+
+message FSMTransitionRequest {
+  string        payload_id   = 1;
+  FSMStateEnum  target_state = 2;
+}
+
+message FSMTransitionResult {
+  bool         allowed    = 1;
+  FSMStateEnum new_state  = 2;
+  string       reason     = 3;
+}
+
+// ── Services ────────────────────────────────────────────────────────────────
+
+// SchemaParserService — wraps the PDA/constrained-grammar engine.
+service SchemaParserService {
+  // Parse a raw payload into a schema-conformant record.
+  rpc ParsePayload (RawPayload) returns (ParsedRecord);
+
+  // Stream a sequence of raw payloads (high-throughput path).
+  rpc ParseStream  (stream RawPayload) returns (stream ParsedRecord);
+
+  // Query or advance the FSM state for a given payload.
+  rpc TransitionFSM (FSMTransitionRequest) returns (FSMTransitionResult);
+}
+
+// HoareVerifierService — wraps the Z3 proof engine.
+service HoareVerifierService {
+  // Verify a single Hoare triple synchronously.
+  rpc Verify (VerificationRequest) returns (VerificationResult);
+}
+
+// HoareAgentService — the end-to-end self-verifying agent loop.
+service HoareAgentService {
+  // Run the two-pass generate → verify → (refactor)* loop.
+  rpc RunTask   (AgentTaskRequest) returns (AgentTaskResult);
+
+  // Stream live FSM state updates to the dashboard.
+  rpc WatchFSM  (RawPayload) returns (stream FSMState);
+}
