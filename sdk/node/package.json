@@ -1,0 +1,21 @@
+{
+  "name": "hoare-agent",
+  "version": "0.1.0",
+  "description": "Node.js SDK for the Hoare-Agent formally-verified code pipeline",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "test": "node test/test.js"
+  },
+  "keywords": [
+    "hoare",
+    "formal-verification",
+    "z3",
+    "smt",
+    "code-pipeline"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

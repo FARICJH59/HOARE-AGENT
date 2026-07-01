@@ -1,0 +1,142 @@
+name: 'Hoare-Agent Verify'
+description: >
+  CI/CD proof gate — verifies Hoare triples in a Python source file using the
+  hoare-agent CLI and Z3 SMT solver.  The job fails if the triple cannot be
+  formally proved.
+
+author: 'FARICJH59'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  file:
+    description: >
+      Path to the Python source file (with # @pre: / # @post: annotations) or
+      a JSON Hoare triple file to verify.
+    required: true
+
+  pre:
+    description: >
+      Pre-condition expression (overrides file annotations).
+      Must be used together with `post`.
+    required: false
+    default: ''
+
+  post:
+    description: >
+      Post-condition expression (overrides file annotations).
+      Must be used together with `pre`.
+    required: false
+    default: ''
+
+  inv:
+    description: >
+      Loop invariant expression.  Repeat the input for multiple invariants
+      (one per line).  Only used together with `pre` and `post`.
+    required: false
+    default: ''
+
+  backend_url:
+    description: >
+      URL of a running Hoare-Agent backend.  When provided, the action
+      delegates verification to the backend REST API instead of the bundled
+      Z3 solver.
+    required: false
+    default: ''
+
+  timeout_ms:
+    description: 'Z3 solver timeout in milliseconds (default: 5000).'
+    required: false
+    default: '5000'
+
+  python_version:
+    description: 'Python version to use (default: 3.12).'
+    required: false
+    default: '3.12'
+
+  sdk_version:
+    description: >
+      hoare-agent SDK version to install from PyPI (default: installs from
+      the sdk/python directory inside this repository when running from the
+      same repo, otherwise installs the latest released version).
+    required: false
+    default: ''
+
+outputs:
+  verified:
+    description: "'true' if the triple was formally proved, 'false' otherwise."
+    value: ${{ steps.verify.outputs.verified }}
+
+  verdict:
+    description: "Verification verdict: VERIFIED | COUNTEREXAMPLE | TIMEOUT | ERROR"
+    value: ${{ steps.verify.outputs.verdict }}
+
+  elapsed_ms:
+    description: 'Z3 solver time in milliseconds.'
+    value: ${{ steps.verify.outputs.elapsed_ms }}
+
+  result_json:
+    description: 'Full VerificationResult serialised as JSON.'
+    value: ${{ steps.verify.outputs.result_json }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5.6.0
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install hoare-agent SDK
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.sdk_version }}" ]; then
+          pip install "hoare-agent==${{ inputs.sdk_version }}" --quiet
+        elif [ -f "${{ github.action_path }}/../sdk/python/pyproject.toml" ]; then
+          # Running from within the HOARE-AGENT repository itself
+          pip install "${{ github.action_path }}/../sdk/python" --quiet
+        else
+          pip install hoare-agent --quiet
+        fi
+
+    - name: Run Hoare verification
+      id: verify
+      shell: bash
+      run: |
+        ARGS=("verify" "--json" "--timeout-ms" "${{ inputs.timeout_ms }}")
+
+        if [ -n "${{ inputs.pre }}" ] && [ -n "${{ inputs.post }}" ]; then
+          ARGS+=("--pre" "${{ inputs.pre }}" "--post" "${{ inputs.post }}")
+          # Add loop invariants (one per line)
+          while IFS= read -r inv_line; do
+            [ -n "$inv_line" ] && ARGS+=("--inv" "$inv_line")
+          done <<< "${{ inputs.inv }}"
+        fi
+
+        if [ -n "${{ inputs.backend_url }}" ]; then
+          ARGS+=("--backend" "${{ inputs.backend_url }}")
+        fi
+
+        ARGS+=("${{ inputs.file }}")
+
+        set +e
+        JSON_OUTPUT=$(hoare-agent "${ARGS[@]}")
+        EXIT_CODE=$?
+        set -e
+
+        echo "result_json=${JSON_OUTPUT}" >> "$GITHUB_OUTPUT"
+        echo "verified=$(echo "${JSON_OUTPUT}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('verified',False)).lower())")" >> "$GITHUB_OUTPUT"
+        echo "verdict=$(echo "${JSON_OUTPUT}"  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('verdict','ERROR'))")"  >> "$GITHUB_OUTPUT"
+        echo "elapsed_ms=$(echo "${JSON_OUTPUT}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('elapsed_ms',0))")"  >> "$GITHUB_OUTPUT"
+
+        if [ "$EXIT_CODE" -ne 0 ]; then
+          echo ""
+          echo "❌ Hoare verification FAILED"
+          echo "${JSON_OUTPUT}" | python3 -m json.tool
+          exit $EXIT_CODE
+        fi
+
+        echo ""
+        echo "✅ Hoare verification PASSED"
