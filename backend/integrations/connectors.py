@@ -77,7 +77,7 @@ class ConnectorRegistry:
             raise KeyError(f"Unknown connector '{connector_name}'")
 
         configured = [key for key in spec.env_keys if os.getenv(key)]
-        configured_count = sum(1 for key in spec.env_keys if os.getenv(key))
+        configured_count = len(configured)
         readiness_ratio = (configured_count / len(spec.env_keys)) if spec.env_keys else 1.0
         return {
             "name": spec.name,
