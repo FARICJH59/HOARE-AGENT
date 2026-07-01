@@ -35,6 +35,9 @@ from hoare_engine.pda_engine import (
 )
 from hoare_engine.agent import HoareAgent
 from schema.models import AgentTaskRequest, TelemetryEvent
+from saas.auth import ApiKeyAuthenticator
+from saas.billing import BillingService
+from saas.usage import UsageMeter
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +180,37 @@ class TestSchemaGrammar:
         grammar = SchemaGrammar(TelemetryEvent, "TelemetryEvent")
         with pytest.raises(GrammarConstraintError):
             grammar.constrain({})  # All required fields missing
+
+
+class TestTenantSchemaRegistry:
+    def test_provision_tenant_with_subset(self):
+        tenant_id = "tenant-a"
+        allowed = registry.provision_tenant(tenant_id, ["TelemetryEvent"])
+        assert allowed == ["TelemetryEvent"]
+        assert registry.list_schemas(tenant_id) == ["TelemetryEvent"]
+
+    def test_reject_schema_not_allowed_for_tenant(self):
+        tenant_id = "tenant-b"
+        registry.provision_tenant(tenant_id, ["TelemetryEvent"])
+        with pytest.raises(KeyError):
+            registry.make_controller("payload-1", "TransformationOutput", tenant_id=tenant_id)
+
+
+class TestSaaSServices:
+    def test_authenticator_allows_anonymous_when_not_required(self, monkeypatch):
+        monkeypatch.delenv("HOARE_API_KEYS", raising=False)
+        monkeypatch.setenv("HOARE_REQUIRE_AUTH", "0")
+        auth = ApiKeyAuthenticator()
+        ctx = auth.authenticate(header_key=None, bearer_key=None)
+        assert ctx.tenant_id == "public"
+
+    def test_usage_billing_estimate(self, monkeypatch):
+        monkeypatch.delenv("STRIPE_API_KEY", raising=False)
+        meter = UsageMeter()
+        billing = BillingService(meter)
+        out = billing.report_usage("tenant-c", 7)
+        assert out["usage_units_total"] == 7
+        assert out["estimated_amount_cents"] > 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────

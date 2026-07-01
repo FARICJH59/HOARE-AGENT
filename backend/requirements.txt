@@ -17,5 +17,8 @@ grpcio-tools>=1.63,<2.0
 # LLM client (OpenAI-compatible)
 openai>=1.30,<2.0
 
+# Billing
+stripe>=10.12,<11.0
+
 # Utilities
 python-dotenv>=1.0,<2.0
