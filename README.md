@@ -55,42 +55,6 @@ pipeline visualisation.
 
 ---
 
-## Repository Layout
-
-```
-HOARE-AGENT/
-├── proto/
-│   └── hoare_agent.proto          # gRPC contract (3 services)
-├── backend/
-│   ├── main.py                    # Entry point
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   ├── hoare_engine/
-│   │   ├── verifier.py            # Z3 Hoare triple verifier
-│   │   ├── pda_engine.py          # PDA / grammar constraint engine
-│   │   └── agent.py               # Two-pass self-verifying agent loop
-│   ├── grpc_server/
-│   │   └── server.py              # gRPC + HTTP/REST server
-│   ├── schema/
-│   │   └── models.py              # Pydantic data models
-│   └── tests/
-│       └── test_pipeline.py       # pytest test suite
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── store.js               # Zustand state store
-│   │   └── components/
-│   │       ├── NodeMap.jsx        # React Flow node graph
-│   │       └── StatePanel.jsx     # Live event log + agent runner
-│   ├── Dockerfile
-│   └── package.json
-├── scripts/
-│   └── bootstrap.ps1              # PowerShell local-dev launcher
-└── docker-compose.yml             # Full stack (backend + frontend + vLLM)
-```
-
----
-
 ## Quick Start
 
 ### Option A — Docker Compose (recommended)
@@ -140,12 +104,236 @@ npm run dev
 
 ---
 
+## Week 2 — Developer Experience (SDK · CLI · GitHub Action)
+
+### Python SDK
+
+```bash
+pip install hoare-agent
+```
+
+```python
+from hoare_agent import verify
+
+result = verify(
+    precondition="n >= 0",
+    postcondition="n >= 0",
+    program="def transform(data): return data",
+)
+
+if result:
+    print(f"✓ Verified in {result.elapsed_ms} ms")
+else:
+    print(f"✗ {result}")   # COUNTEREXAMPLE / TIMEOUT / ERROR
+```
+
+Delegate to a running backend instead of the local Z3 solver:
+
+```python
+result = verify(
+    precondition="n >= 0",
+    postcondition="n >= 0",
+    backend_url="http://localhost:8080",
+)
+```
+
+See [`sdk/python/README.md`](sdk/python/README.md) for the full API reference.
+
+---
+
+### CLI (`hoare-agent`)
+
+The Python SDK installs a command-line tool:
+
+```bash
+# Verify a Python file with inline annotations
+hoare-agent verify mymodule.py
+
+# Verify with explicit pre/post-conditions
+hoare-agent verify --pre "n >= 0" --post "n >= 0" mymodule.py
+
+# Verify a JSON triple file
+hoare-agent verify triple.json
+
+# Output JSON result (CI-friendly)
+hoare-agent verify --json mymodule.py
+
+# Delegate to a running backend
+hoare-agent verify --backend http://localhost:8080 mymodule.py
+```
+
+#### Inline annotation format
+
+Add `# @pre:` and `# @post:` comments anywhere in your Python file:
+
+```python
+# @pre:  n >= 0
+# @post: result >= 0
+# @inv:  i >= 0    # optional, repeatable
+def transform(data: dict) -> dict:
+    ...
+```
+
+#### JSON triple format
+
+```json
+{
+  "precondition":    "n >= 0",
+  "program":         "def transform(data): return data",
+  "postcondition":   "n >= 0",
+  "loop_invariants": []
+}
+```
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Triple verified |
+| `1` | Usage error (bad arguments, file not found, missing annotations) |
+| `2` | Verification failed (counterexample or error) |
+
+---
+
+### Node.js SDK
+
+```bash
+npm install hoare-agent
+```
+
+```javascript
+const { verify } = require('hoare-agent');
+
+const result = await verify({
+  precondition:  'n >= 0',
+  postcondition: 'n >= 0',
+  program:       'def transform(data): return data',
+}, { backendUrl: 'http://localhost:8080' });
+
+if (result.verified) {
+  console.log(`✓ Verified in ${result.elapsed_ms} ms`);
+} else {
+  console.error(`✗ ${result.verdict}: ${result.counterexample || result.error_detail}`);
+}
+```
+
+See [`sdk/node/README.md`](sdk/node/README.md) for the full API reference.
+
+---
+
+### GitHub Action — CI/CD Proof Gate
+
+Use `FARICJH59/HOARE-AGENT/action@v1` as a required check in any workflow:
+
+```yaml
+# .github/workflows/proof-gate.yml
+name: Proof Gate
+
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Verify a file with inline annotations
+      - name: Hoare proof gate
+        uses: FARICJH59/HOARE-AGENT/action@v1
+        with:
+          file: src/transform.py
+
+      # Or verify with explicit conditions
+      - name: Hoare proof gate (explicit)
+        uses: FARICJH59/HOARE-AGENT/action@v1
+        with:
+          file:  src/transform.py
+          pre:   "n >= 0"
+          post:  "n >= 0"
+
+      # Or delegate to a running backend
+      - name: Hoare proof gate (backend)
+        uses: FARICJH59/HOARE-AGENT/action@v1
+        with:
+          file:        src/transform.py
+          backend_url: ${{ secrets.HOARE_BACKEND_URL }}
+```
+
+Outputs available after the step:
+
+| Output | Description |
+|--------|-------------|
+| `verified`    | `'true'` if the triple was formally proved |
+| `verdict`     | `VERIFIED` \| `COUNTEREXAMPLE` \| `TIMEOUT` \| `ERROR` |
+| `elapsed_ms`  | Z3 solver time in milliseconds |
+| `result_json` | Full `VerificationResult` as JSON |
+
+See [`action/action.yml`](action/action.yml) for all available inputs.
+
+---
+
 ## Running Tests
 
 ```bash
+# Backend tests
 cd backend
 pip install -r requirements.txt pytest
 pytest tests/ -v
+
+# Python SDK tests
+cd sdk/python
+pip install -e ".[dev]"
+pytest tests/ -v
+
+# Node.js SDK tests
+cd sdk/node
+node test/test.js
+```
+
+---
+
+## Repository Layout
+
+```
+HOARE-AGENT/
+├── proto/
+│   └── hoare_agent.proto          # gRPC contract (3 services)
+├── backend/
+│   ├── main.py                    # Entry point
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── hoare_engine/
+│   │   ├── verifier.py            # Z3 Hoare triple verifier
+│   │   ├── pda_engine.py          # PDA / grammar constraint engine
+│   │   └── agent.py               # Two-pass self-verifying agent loop
+│   ├── grpc_server/
+│   │   └── server.py              # gRPC + HTTP/REST server
+│   ├── schema/
+│   │   └── models.py              # Pydantic data models
+│   └── tests/
+│       └── test_pipeline.py       # pytest test suite
+├── sdk/
+│   ├── python/                    # pip install hoare-agent
+│   │   ├── pyproject.toml
+│   │   ├── hoare_agent/           # SDK package + CLI entry point
+│   │   └── tests/                 # SDK unit tests
+│   └── node/                      # npm install hoare-agent
+│       ├── package.json
+│       ├── index.js               # verify() function
+│       ├── index.d.ts             # TypeScript declarations
+│       └── test/                  # Node.js SDK unit tests
+├── action/
+│   └── action.yml                 # GitHub Action (CI/CD proof gate)
+├── frontend/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── store.js               # Zustand state store
+│   │   └── components/
+│   │       ├── NodeMap.jsx        # React Flow node graph
+│   │       └── StatePanel.jsx     # Live event log + agent runner
+│   ├── Dockerfile
+│   └── package.json
+├── scripts/
+│   └── bootstrap.ps1              # PowerShell local-dev launcher
+└── docker-compose.yml             # Full stack (backend + frontend + vLLM)
 ```
 
 ---
