@@ -1,0 +1,21 @@
+# Hoare-Agent — Python backend dependencies
+# Pin ranges allow minor-version flexibility while preventing breaking changes.
+
+# Core validation / data modelling
+pydantic>=2.7,<3.0
+
+# Formal verification
+z3-solver>=4.13,<5.0
+
+# HTTP server (REST fallback for dashboard)
+aiohttp>=3.9,<4.0
+
+# gRPC transport
+grpcio>=1.63,<2.0
+grpcio-tools>=1.63,<2.0
+
+# LLM client (OpenAI-compatible)
+openai>=1.30,<2.0
+
+# Utilities
+python-dotenv>=1.0,<2.0

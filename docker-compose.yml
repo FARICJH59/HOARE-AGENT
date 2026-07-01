@@ -1,0 +1,84 @@
+# Hoare-Agent — Docker Compose Stack
+#
+# Services:
+#   backend   — Python Hoare-Agent server (HTTP :8080, gRPC :50051)
+#   frontend  — React dashboard served via nginx (:3000)
+#   vllm      — Optional ultra-fast micro-model (Qwen 0.5B / Phi-4-mini)
+#               Uncomment to enable real LLM inference.
+#
+# Usage:
+#   docker compose up --build
+#   docker compose up --build --profile llm   # include vLLM
+#
+version: "3.9"
+
+services:
+
+  # ── Python Hoare-Agent Backend ────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hoare-agent-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    environment:
+      HOARE_HTTP_PORT:    "8080"
+      HOARE_GRPC_PORT:    "50051"
+      # Point at the vLLM container when the llm profile is active
+      HOARE_LLM_BASE_URL: "http://vllm:8000/v1"
+      HOARE_LLM_MODEL:    "Qwen/Qwen2.5-0.5B-Instruct"
+      HOARE_LLM_API_KEY:  "EMPTY"
+      HOARE_USE_MOCK_LLM: "0"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── React Dashboard ───────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hoare-agent-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ── vLLM Micro-Model (optional — enable with --profile llm) ──────────────
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: hoare-agent-vllm
+    profiles: ["llm"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: "${HF_TOKEN:-}"
+    command:
+      - "--model"
+      - "Qwen/Qwen2.5-0.5B-Instruct"
+      - "--dtype"
+      - "float16"
+      - "--max-model-len"
+      - "4096"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # For CPU-only testing replace the above deploy block with:
+    # (remove the deploy section and add):
+    # command: ["--model", "Qwen/Qwen2.5-0.5B-Instruct", "--device", "cpu"]

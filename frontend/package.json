@@ -1,0 +1,24 @@
+{
+  "name": "hoare-agent-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time FSM node-map dashboard for the Hoare-Agent pipeline",
+  "private": true,
+  "scripts": {
+    "dev":   "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --ext .jsx,.js"
+  },
+  "dependencies": {
+    "react":       "^18.3.1",
+    "react-dom":   "^18.3.1",
+    "reactflow":   "^11.11.4",
+    "axios":       "^1.7.2",
+    "zustand":     "^4.5.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite":                 "^5.3.1",
+    "eslint":               "^8.57.0"
+  }
+}
