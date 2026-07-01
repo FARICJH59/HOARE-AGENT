@@ -166,7 +166,7 @@ def run_z3(triple: HoareTriple, timeout_ms: int = 5_000) -> VerificationResult:
             solver.add(z3.Not(_python_expr_to_z3(post, env)))
 
         result_str = str(solver.check())
-    except Exception as exc:  # noqa: BLE001
+    except (ValueError, z3.Z3Exception) as exc:
         elapsed = int((time.monotonic() - t0) * 1000)
         return VerificationResult(
             verified=False,

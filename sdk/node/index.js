@@ -111,11 +111,11 @@ function _post(url, body, timeoutMs) {
             error_detail:   json.error_detail   ?? '',
             elapsed_ms:     json.elapsed_ms     ?? 0,
           });
-        } catch (_) {
+        } catch (err) {
           resolve({
             verified:     false,
             verdict:      'ERROR',
-            error_detail: `Invalid JSON response from backend: ${data.slice(0, 200)}`,
+            error_detail: `Invalid JSON response from backend: ${err.message} — ${data.slice(0, 200)}`,
             elapsed_ms:   0,
           });
         }

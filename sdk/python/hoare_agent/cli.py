@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use the Hoare-Agent backend REST API (e.g. http://localhost:8080) instead of the local Z3 solver",
     )
     verify.add_argument(
-        "--timeout-ms", type=int, default=5_000,
+        "--timeout-ms", type=int, default=5_000, dest="timeout_ms",
         help="Z3 solver timeout in milliseconds (default: 5000)",
     )
     verify.add_argument(
