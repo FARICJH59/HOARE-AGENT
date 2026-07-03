@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ALLOWED_CHECKOUT_HOSTS = new Set(["checkout.stripe.com", "buy.stripe.com"]);
+
 type SubscribePageProps = {
   searchParams?: {
     email?: string;
@@ -15,10 +18,16 @@ export default function SubscribePage({ searchParams }: SubscribePageProps) {
     const user = {
       email: searchParams?.email?.trim() ?? "",
     };
-    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email);
+    const isValidEmail = EMAIL_PATTERN.test(user.email);
+    const apiBaseUrl = process.env.NEXT_PUBLIC_HOARE_API_URL?.trim() ?? "";
 
     if (!isValidEmail) {
       setMessage("Missing or invalid email address.");
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setMessage("Checkout is unavailable.");
       return;
     }
 
@@ -26,8 +35,12 @@ export default function SubscribePage({ searchParams }: SubscribePageProps) {
 
     const startCheckout = async () => {
       try {
+        const billingApiUrl = new URL(
+          "/api/billing/create-checkout-session",
+          apiBaseUrl
+        );
         const res = await fetch(
-          `${process.env.NEXT_PUBLIC_HOARE_API_URL}/api/billing/create-checkout-session`,
+          billingApiUrl.toString(),
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -45,7 +58,16 @@ export default function SubscribePage({ searchParams }: SubscribePageProps) {
           throw new Error("Checkout URL was not returned.");
         }
 
-        window.location.href = url;
+        const checkoutUrl = new URL(url);
+
+        if (
+          checkoutUrl.protocol !== "https:" ||
+          !ALLOWED_CHECKOUT_HOSTS.has(checkoutUrl.hostname)
+        ) {
+          throw new Error("Checkout URL is invalid.");
+        }
+
+        window.location.href = checkoutUrl.toString();
       } catch (error) {
         if (!cancelled) {
           setMessage(
