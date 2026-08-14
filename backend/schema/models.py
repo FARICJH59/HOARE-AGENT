@@ -15,10 +15,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-# ---------------------------------------------------------------------------
-# FSM State
-# ---------------------------------------------------------------------------
-
 class FSMStateEnum(str, Enum):
     IDLE       = "IDLE"
     INGESTING  = "INGESTING"
@@ -32,42 +28,34 @@ class FSMStateEnum(str, Enum):
 
 
 class FSMState(BaseModel):
-    state:      FSMStateEnum
+    state: FSMStateEnum
     payload_id: str
-    detail:     str = ""
-    timestamp:  datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    detail: str = ""
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-
-# ---------------------------------------------------------------------------
-# Ingestion / Parsing
-# ---------------------------------------------------------------------------
 
 class RawPayload(BaseModel):
-    payload_id:  str = Field(default_factory=lambda: str(uuid.uuid4()))
+    payload_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source_name: str
-    raw_data:    Dict[str, Any]
-    metadata:    Dict[str, str] = Field(default_factory=dict)
+    raw_data: Dict[str, Any]
+    metadata: Dict[str, str] = Field(default_factory=dict)
 
 
 class ParsedRecord(BaseModel):
-    payload_id:  str
+    payload_id: str
     schema_name: str
-    structured:  Dict[str, Any]
-    fsm_state:   FSMState
-    valid:       bool
-    error:       str = ""
+    structured: Dict[str, Any]
+    fsm_state: FSMState
+    valid: bool
+    error: str = ""
 
-
-# ---------------------------------------------------------------------------
-# Hoare Logic
-# ---------------------------------------------------------------------------
 
 class HoareTriple(BaseModel):
-    """Represents a Hoare triple  {P} C {Q}."""
+    """Represents a Hoare triple {P} C {Q}."""
 
-    precondition:   str = Field(..., description="Pre-condition P (SMT-LIB2 or Python boolean expression)")
-    program:        str = Field(..., description="Transformation program C (Python / SQL)")
-    postcondition:  str = Field(..., description="Post-condition Q (SMT-LIB2 or Python boolean expression)")
+    precondition: str = Field(..., description="Pre-condition P (SMT-LIB2 or Python boolean expression)")
+    program: str = Field(..., description="Transformation program C (Python / SQL)")
+    postcondition: str = Field(..., description="Post-condition Q (SMT-LIB2 or Python boolean expression)")
     loop_invariants: List[str] = Field(default_factory=list)
 
     @field_validator("precondition", "postcondition", mode="before")
@@ -78,61 +66,54 @@ class HoareTriple(BaseModel):
 
 class VerificationRequest(BaseModel):
     request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    triple:     HoareTriple
+    triple: HoareTriple
     timeout_ms: int = 5_000
 
 
 class VerificationVerdict(str, Enum):
-    VERIFIED        = "VERIFIED"
-    COUNTEREXAMPLE  = "COUNTEREXAMPLE"
-    TIMEOUT         = "TIMEOUT"
-    ERROR           = "ERROR"
+    VERIFIED = "VERIFIED"
+    COUNTEREXAMPLE = "COUNTEREXAMPLE"
+    TIMEOUT = "TIMEOUT"
+    ERROR = "ERROR"
 
 
 class VerificationResult(BaseModel):
-    request_id:      str
-    verified:        bool
-    verdict:         VerificationVerdict
-    counterexample:  str = ""
-    error_detail:    str = ""
-    elapsed_ms:      int = 0
+    request_id: str
+    verified: bool
+    verdict: VerificationVerdict
+    counterexample: str = ""
+    error_detail: str = ""
+    elapsed_ms: int = 0
 
-
-# ---------------------------------------------------------------------------
-# Agent Task
-# ---------------------------------------------------------------------------
 
 class AgentTaskRequest(BaseModel):
-    task_id:       str = Field(default_factory=lambda: str(uuid.uuid4()))
-    description:   str
+    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    description: str
     target_schema: str = Field(..., description="JSON-serialised target schema")
-    max_retries:   int = Field(default=3, ge=1, le=10)
+    max_retries: int = Field(default=3, ge=1, le=10)
+    capability: str = Field(default="agent.run", min_length=1, max_length=128)
 
 
 class AgentTaskResult(BaseModel):
-    task_id:        str
+    task_id: str
     generated_code: str
-    triple:         Optional[HoareTriple] = None
-    proof:          Optional[VerificationResult] = None
-    repair_trace:   List[Dict[str, Any]] = Field(default_factory=list)
-    iterations:     int = 0
-    success:        bool = False
+    triple: Optional[HoareTriple] = None
+    proof: Optional[VerificationResult] = None
+    repair_trace: List[Dict[str, Any]] = Field(default_factory=list)
+    iterations: int = 0
+    success: bool = False
     failure_reason: str = ""
 
-
-# ---------------------------------------------------------------------------
-# Structured extraction targets (used by the constrained grammar engine)
-# ---------------------------------------------------------------------------
 
 class TelemetryEvent(BaseModel):
     """Canonical schema for AesirGrid telemetry events."""
 
-    event_id:     str
-    source:       str
-    timestamp:    datetime
-    metric_name:  str
+    event_id: str
+    source: str
+    timestamp: datetime
+    metric_name: str
     metric_value: float
-    tags:         Dict[str, str] = Field(default_factory=dict)
+    tags: Dict[str, str] = Field(default_factory=dict)
 
     @field_validator("metric_value")
     @classmethod
@@ -146,12 +127,12 @@ class TelemetryEvent(BaseModel):
 class TransformationOutput(BaseModel):
     """Validated output of an agent-generated data transformation."""
 
-    output_id:      str = Field(default_factory=lambda: str(uuid.uuid4()))
+    output_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     source_payload: str
-    schema_name:    str
-    rows:           List[Dict[str, Any]]
-    row_count:      int = Field(ge=0, description="Number of rows in the output")
-    verified:       bool = False
+    schema_name: str
+    rows: List[Dict[str, Any]]
+    row_count: int = Field(ge=0, description="Number of rows in the output")
+    verified: bool = False
 
     @field_validator("row_count", mode="before")
     @classmethod

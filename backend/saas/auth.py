@@ -14,10 +14,15 @@ class AuthContext:
 
 
 class ApiKeyAuthenticator:
-    """API-key authenticator for gateway-style tenant isolation."""
+    """API-key authenticator for gateway-style tenant isolation.
+
+    Anonymous access is intentionally disabled by default. Development mode
+    must be explicitly opted into with HOARE_ALLOW_ANONYMOUS=1.
+    """
 
     def __init__(self) -> None:
-        self.require_auth = os.getenv("HOARE_REQUIRE_AUTH", "0") == "1"
+        self.require_auth = os.getenv("HOARE_REQUIRE_AUTH", "1") == "1"
+        self.allow_anonymous = os.getenv("HOARE_ALLOW_ANONYMOUS", "0") == "1"
         self._keys = self._load_keys()
 
     @staticmethod
@@ -45,11 +50,10 @@ class ApiKeyAuthenticator:
     def authenticate(self, header_key: str | None, bearer_key: str | None) -> AuthContext:
         api_key = header_key or bearer_key
         if not self._keys:
-            if self.require_auth:
-                raise PermissionError("Authentication required but HOARE_API_KEYS is empty")
-            return AuthContext(tenant_id="public", api_key_id="anonymous", plan="free")
+            if self.allow_anonymous and not self.require_auth:
+                return AuthContext(tenant_id="public", api_key_id="anonymous", plan="free")
+            raise PermissionError("Authentication required but HOARE_API_KEYS is empty")
 
         if not api_key or api_key not in self._keys:
             raise PermissionError("Invalid or missing API key")
         return self._keys[api_key]
-
