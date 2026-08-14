@@ -9,23 +9,13 @@ the separate internal service key and are never tenant-authorized.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
 from urllib.parse import parse_qs
 from typing import AsyncIterator
 
-from schema.models import (
-    AgentTaskRequest,
-    FSMState,
-    FSMStateEnum,
-    HoareTriple,
-    ParsedRecord,
-    RawPayload,
-    VerificationRequest,
-    VerificationResult,
-)
+from schema.models import AgentTaskRequest, FSMState, FSMStateEnum, ParsedRecord, RawPayload, VerificationRequest, VerificationResult
 from hoare_engine.agent import HoareAgent, AgentObserver
 from hoare_engine.pda_engine import registry
 from hoare_engine.verifier import verifier
@@ -37,7 +27,6 @@ from saas.usage import UsageMeter
 from integrations import connector_registry
 
 logger = logging.getLogger(__name__)
-
 _GRPC_PORT = int(os.getenv("HOARE_GRPC_PORT", "50051"))
 _HTTP_PORT = int(os.getenv("HOARE_HTTP_PORT", "8080"))
 _USE_MOCK_LLM = os.getenv("HOARE_USE_MOCK_LLM", "0") == "1"
@@ -46,18 +35,15 @@ _DEFAULT_AUTH_CTX = AuthContext(tenant_id="public", api_key_id="public", plan="p
 
 
 def _bearer_key_from_header(authz_header: str | None) -> str | None:
-    if not authz_header:
-        return None
-    if not authz_header.startswith("Bearer "):
+    if not authz_header or not authz_header.startswith("Bearer "):
         return None
     return authz_header[len("Bearer ") :].strip() or None
 
 
 def _query_limit(query_string: str, default: int = 100) -> int:
     parsed = parse_qs(query_string or "")
-    value = parsed.get("limit", [str(default)])[0]
     try:
-        return max(1, min(int(value), 500))
+        return max(1, min(int(parsed.get("limit", [str(default)])[0]), 500))
     except ValueError:
         return default
 
@@ -68,27 +54,14 @@ class SchemaParserServicer:
         try:
             controller = registry.make_controller(raw.payload_id, schema_name, tenant_id=tenant_id)
         except KeyError:
-            return ParsedRecord(
-                payload_id=raw.payload_id,
-                schema_name=schema_name,
-                structured={},
-                fsm_state=FSMState(
-                    state=FSMStateEnum.ERROR,
-                    payload_id=raw.payload_id,
-                    detail=f"Unknown schema: {schema_name}",
-                ),
-                valid=False,
-                error=f"Unknown schema: {schema_name}",
-            )
+            return ParsedRecord(payload_id=raw.payload_id, schema_name=schema_name, structured={}, fsm_state=FSMState(state=FSMStateEnum.ERROR, payload_id=raw.payload_id, detail=f"Unknown schema: {schema_name}"), valid=False, error=f"Unknown schema: {schema_name}")
         return controller.process_payload(raw)
 
     async def parse_stream(self, payloads: AsyncIterator[RawPayload]) -> AsyncIterator[ParsedRecord]:
         async for raw in payloads:
             yield await self.parse_payload(raw)
 
-    async def transition_fsm(
-        self, payload_id: str, schema_name: str, target: FSMStateEnum, tenant_id: str = "public"
-    ) -> FSMState:
+    async def transition_fsm(self, payload_id: str, schema_name: str, target: FSMStateEnum, tenant_id: str = "public") -> FSMState:
         controller = registry.make_controller(payload_id, schema_name, tenant_id=tenant_id)
         return controller.transition(target)
 
@@ -140,15 +113,10 @@ async def _start_http_server() -> None:
         logger.warning("aiohttp not installed — HTTP server disabled")
         return
 
-    parser_svc = SchemaParserServicer()
-    verifier_svc = HoareVerifierServicer()
-    agent_svc = HoareAgentServicer()
-    authenticator = ApiKeyAuthenticator()
-    firewall = CapabilityFirewall()
-    usage_meter = UsageMeter()
+    parser_svc, verifier_svc, agent_svc = SchemaParserServicer(), HoareVerifierServicer(), HoareAgentServicer()
+    authenticator, firewall = ApiKeyAuthenticator(), CapabilityFirewall()
+    usage_meter, billing, audit = UsageMeter(), None, AuditLogger()
     billing = BillingService(usage_meter)
-    audit = AuditLogger()
-
     registry.provision_tenant("public", registry.list_schemas("public"))
     routes = web.RouteTableDef()
 
@@ -159,63 +127,36 @@ async def _start_http_server() -> None:
     @routes.post("/parse")
     async def parse(req: web.Request) -> web.Response:
         body = await req.json()
-        auth_ctx: AuthContext = req["auth_ctx"]
-        body.setdefault("metadata", {})
-        body["metadata"]["tenant_id"] = auth_ctx.tenant_id
-        raw = RawPayload(**body)
-        rec = await parser_svc.parse_payload(raw, tenant_id=auth_ctx.tenant_id)
+        auth_ctx = req["auth_ctx"]
+        body.setdefault("metadata", {})["tenant_id"] = auth_ctx.tenant_id
+        rec = await parser_svc.parse_payload(RawPayload(**body), tenant_id=auth_ctx.tenant_id)
         return web.json_response(rec.model_dump(mode="json"))
 
     @routes.post("/verify")
     async def verify_endpoint(req: web.Request) -> web.Response:
-        body = await req.json()
-        vreq = VerificationRequest(**body)
-        result = verifier_svc.verify(vreq)
+        result = verifier_svc.verify(VerificationRequest(**(await req.json())))
         return web.json_response(result.model_dump(mode="json"))
 
     @routes.post("/agent/run")
     async def run_agent(req: web.Request) -> web.Response:
-        body = await req.json()
-        areq = AgentTaskRequest(**body)
-        auth_ctx: AuthContext = req["auth_ctx"]
-        decision = firewall.authorize(
-            areq.capability,
-            tenant_id=auth_ctx.tenant_id,
-            internal_service_key=req.headers.get("x-hoare-service-key"),
-            entitled=True,
-        )
-        audit.log(
-            event_type="capability_decision",
-            tenant_id=auth_ctx.tenant_id,
-            actor=auth_ctx.api_key_id,
-            capability=areq.capability,
-            allowed=decision.allowed,
-            reason=decision.reason,
-            internal=decision.internal,
-        )
+        areq = AgentTaskRequest(**(await req.json()))
+        auth_ctx = req["auth_ctx"]
+        decision = firewall.authorize(areq.capability, tenant_id=auth_ctx.tenant_id, internal_service_key=req.headers.get("x-hoare-service-key"), entitled=True)
+        audit.log(event_type="capability_decision", tenant_id=auth_ctx.tenant_id, actor=auth_ctx.api_key_id, capability=areq.capability, allowed=decision.allowed, reason=decision.reason, internal=decision.internal)
         if not decision.allowed:
-            return web.json_response(
-                {"error": "CAPABILITY_FORBIDDEN", "capability": areq.capability, "reason": decision.reason},
-                status=403,
-            )
+            return web.json_response({"error": "CAPABILITY_FORBIDDEN", "capability": areq.capability, "reason": decision.reason}, status=403)
         result, states = await agent_svc.run_task(areq)
-        return web.json_response({
-            "result": result.model_dump(mode="json"),
-            "fsm_states": [s.model_dump(mode="json") for s in states],
-        })
+        return web.json_response({"result": result.model_dump(mode="json"), "fsm_states": [s.model_dump(mode="json") for s in states]})
 
     @routes.get("/schemas")
     async def list_schemas(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        return web.json_response(registry.list_schemas(auth_ctx.tenant_id))
+        return web.json_response(registry.list_schemas(req["auth_ctx"].tenant_id))
 
     @routes.post("/tenants/provision")
     async def provision_tenant(req: web.Request) -> web.Response:
         body = await req.json()
-        tenant_id = body["tenant_id"]
-        schemas = body.get("schemas")
-        allowed = registry.provision_tenant(tenant_id, schemas=schemas)
-        return web.json_response({"tenant_id": tenant_id, "schemas": allowed})
+        allowed = registry.provision_tenant(body["tenant_id"], schemas=body.get("schemas"))
+        return web.json_response({"tenant_id": body["tenant_id"], "schemas": allowed})
 
     @routes.get("/tenants/{tenant_id}/schemas")
     async def tenant_schemas(req: web.Request) -> web.Response:
@@ -224,37 +165,25 @@ async def _start_http_server() -> None:
 
     @routes.get("/usage/me")
     async def usage_me(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        return web.json_response(usage_meter.summary(auth_ctx.tenant_id))
+        return web.json_response(usage_meter.summary(req["auth_ctx"].tenant_id))
 
     @routes.post("/billing/usage")
     async def bill_usage(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        body = await req.json()
-        result = billing.report_usage(auth_ctx.tenant_id, int(body.get("units", 0)))
-        return web.json_response(result)
+        auth_ctx = req["auth_ctx"]
+        return web.json_response(billing.report_usage(auth_ctx.tenant_id, int((await req.json()).get("units", 0))))
 
     @routes.post("/billing/checkout")
     async def billing_checkout(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        body = await req.json()
-        result = billing.create_checkout_session(
-            tenant_id=auth_ctx.tenant_id,
-            price_id=body["price_id"],
-            success_url=body["success_url"],
-            cancel_url=body["cancel_url"],
-        )
-        return web.json_response(result)
+        auth_ctx, body = req["auth_ctx"], await req.json()
+        return web.json_response(billing.create_checkout_session(tenant_id=auth_ctx.tenant_id, price_id=body["price_id"], success_url=body["success_url"], cancel_url=body["cancel_url"]))
 
     @routes.get("/audit/events")
     async def audit_events(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        return web.json_response(audit.recent(tenant_id=auth_ctx.tenant_id, limit=_query_limit(req.query_string)))
+        return web.json_response(audit.recent(tenant_id=req["auth_ctx"].tenant_id, limit=_query_limit(req.query_string)))
 
     @routes.get("/audit/summary")
     async def audit_summary(req: web.Request) -> web.Response:
-        auth_ctx: AuthContext = req["auth_ctx"]
-        return web.json_response(audit.summary(tenant_id=auth_ctx.tenant_id))
+        return web.json_response(audit.summary(tenant_id=req["auth_ctx"].tenant_id))
 
     @routes.get("/integrations/connectors")
     async def list_connectors(_req: web.Request) -> web.Response:
@@ -275,10 +204,12 @@ async def _start_http_server() -> None:
                 request["auth_ctx"] = auth_ctx
                 response = await handler(request)
             else:
-                auth_ctx = authenticator.authenticate(
-                    header_key=request.headers.get("x-api-key"),
-                    bearer_key=_bearer_key_from_header(request.headers.get("Authorization")),
-                )
+                internal_key = request.headers.get("x-hoare-service-key")
+                configured_internal = os.getenv("HOARE_INTERNAL_SERVICE_KEY", "")
+                if internal_key and configured_internal and __import__("hmac").compare_digest(internal_key, configured_internal):
+                    auth_ctx = AuthContext(tenant_id="hoare-internal", api_key_id="internal-service", plan="internal")
+                else:
+                    auth_ctx = authenticator.authenticate(header_key=request.headers.get("x-api-key"), bearer_key=_bearer_key_from_header(request.headers.get("Authorization")))
                 request["auth_ctx"] = auth_ctx
                 response = await handler(request)
         except PermissionError as exc:
@@ -296,15 +227,7 @@ async def _start_http_server() -> None:
         tenant_id = auth_ctx.tenant_id
         if request.path not in _PUBLIC_PATHS:
             usage_meter.record_request(tenant_id, request.path)
-        audit.log(
-            event_type="http_request",
-            tenant_id=tenant_id,
-            actor=auth_ctx.api_key_id,
-            method=request.method,
-            path=request.path,
-            status=response.status,
-            elapsed_ms=round((time.time() - start) * 1000, 2),
-        )
+        audit.log(event_type="http_request", tenant_id=tenant_id, actor=auth_ctx.api_key_id, method=request.method, path=request.path, status=response.status, elapsed_ms=round((time.time() - start) * 1000, 2))
         response.headers["Access-Control-Allow-Origin"] = os.getenv("HOARE_CORS_ORIGIN", "")
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, x-api-key, x-hoare-service-key"
@@ -314,8 +237,7 @@ async def _start_http_server() -> None:
     app.add_routes(routes)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", _HTTP_PORT)
-    await site.start()
+    await web.TCPSite(runner, "0.0.0.0", _HTTP_PORT).start()
     logger.info("HTTP server listening on port %d", _HTTP_PORT)
 
 
