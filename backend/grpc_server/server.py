@@ -355,6 +355,9 @@ async def _start_http_server() -> None:
     await site.start()
     logger.info("HTTP server listening on port %d", _HTTP_PORT)
 
+    # Keep the HTTP service alive when gRPC is unavailable.
+    await asyncio.Event().wait()
+
 
 # ---------------------------------------------------------------------------
 # gRPC server (graceful stub — full impl requires generated protobuf stubs)
