@@ -124,18 +124,20 @@ def _try_openai_call(messages: List[Dict[str, str]]) -> str:
 def _mock_llm_call(_messages: List[Dict[str, str]]) -> str:  # noqa: ARG001
     """
     Deterministic mock used when no LLM endpoint is configured.
-    Returns a valid Hoare-annotated identity transform that always verifies.
+
+    The mock deliberately stays inside the verifier's supported
+    semantic subset so CI exercises the complete generate -> verify
+    pipeline without requiring collection-level symbolic execution.
     """
     return json.dumps({
         "program": (
             "def transform(data: dict) -> dict:\n"
             "    n = len(data)\n"
-            "    result = {k: v for k, v in data.items()}\n"
-            "    return result"
+            "    return data"
         ),
-        "precondition":  "n >= 0",
+        "precondition": "n >= 0",
         "postcondition": "n >= 0",
-        "loop_invariants": ["n >= 0"],
+        "loop_invariants": [],
     })
 
 
