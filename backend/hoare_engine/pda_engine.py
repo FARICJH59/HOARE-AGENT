@@ -309,6 +309,10 @@ class GrammarRegistry:
         self._grammars: Dict[str, SchemaGrammar] = {}
         self._tenant_schemas: Dict[str, Set[str]] = {"public": set()}
 
+        # Persistent FSM controllers keyed by tenant/payload/schema.
+        # A payload must retain its FSM state across RPC calls.
+        self._controllers: Dict[Tuple[str, str, str], PDAController] = {}
+
     def register(self, model_class: Type[BaseModel], schema_name: str) -> SchemaGrammar:
         grammar = SchemaGrammar(model_class, schema_name)
         self._grammars[schema_name] = grammar
@@ -339,8 +343,40 @@ class GrammarRegistry:
         except KeyError:
             raise KeyError(f"Schema '{schema_name}' is not registered") from None
 
-    def make_controller(self, payload_id: str, schema_name: str, tenant_id: str = "public") -> PDAController:
-        return PDAController(payload_id, self.get(schema_name, tenant_id=tenant_id))
+    def make_controller(
+        self,
+        payload_id: str,
+        schema_name: str,
+        tenant_id: str = "public",
+    ) -> PDAController:
+        """Create a fresh FSM controller for a payload."""
+        return PDAController(
+            payload_id,
+            self.get(schema_name, tenant_id=tenant_id),
+        )
+
+    def get_or_make_controller(
+        self,
+        payload_id: str,
+        schema_name: str,
+        tenant_id: str = "public",
+    ) -> PDAController:
+        """
+        Return the persistent FSM controller for a payload.
+
+        Controllers are scoped by tenant, payload, and schema so repeated
+        RPC calls operate on the same FSM instance while preserving
+        tenant isolation.
+        """
+        grammar = self.get(schema_name, tenant_id=tenant_id)
+        key = (tenant_id, payload_id, schema_name)
+
+        controller = self._controllers.get(key)
+        if controller is None:
+            controller = PDAController(payload_id, grammar)
+            self._controllers[key] = controller
+
+        return controller
 
 
 # ---------------------------------------------------------------------------

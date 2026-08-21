@@ -196,6 +196,97 @@ def _build_smt2_declarations(all_ids: List[str]) -> str:
     return "\n".join(f"(declare-const {name} Int)" for name in all_ids)
 
 
+def _program_to_transition(
+    program: str,
+    env_before: Dict[str, "z3.ExprRef"],
+    env_after: Dict[str, "z3.ExprRef"],
+) -> List["z3.BoolRef"]:
+    """
+    Translate a restricted source program into state-transition constraints.
+
+    Empty source is a valid no-op program.  Non-empty Python source is first
+    lowered into Verification IR so the verifier reasons over semantic IR
+    rather than interpreting arbitrary source directly.
+    """
+    constraints: List["z3.BoolRef"] = []
+    assigned: set[str] = set()
+
+    # Empty program = identity transition.
+    if not program.strip():
+        for name in env_before:
+            constraints.append(env_after[name] == env_before[name])
+        return constraints
+
+    from hoare_engine.lowering import LoweringError, lower_python
+
+    try:
+        ir = lower_python(program)
+    except LoweringError as exc:
+        raise ValueError(str(exc)) from exc
+
+    # Translate semantic assignments.
+    for assignment in ir.assignments:
+        name = assignment.target
+
+        if name not in env_after:
+            raise ValueError(
+                f"Unknown assignment target '{name}'. "
+                "Declare it in the precondition or postcondition."
+            )
+
+        expression = assignment.expression
+
+        # Collection length is abstracted into a non-negative integer.
+        #
+        # Example:
+        #     n = len(data)
+        #
+        # becomes:
+        #     n_after >= 0
+        #
+        # Python collection internals are intentionally outside the
+        # scalar Hoare-state model.
+        if expression.startswith("len("):
+            constraints.append(env_after[name] >= 0)
+            assigned.add(name)
+            continue
+
+        try:
+            rhs = _Z3Builder(env_before).build(expression)
+        except Exception as exc:
+            raise ValueError(
+                f"Unsupported assignment expression for '{name}': "
+                f"{expression}"
+            ) from exc
+
+        constraints.append(env_after[name] == rhs)
+        assigned.add(name)
+
+    # Semantic facts describe the resulting state.
+    for fact in ir.facts:
+        try:
+            constraints.append(
+                _python_expr_to_z3(fact, env_after)
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"Unsupported verification fact: {fact}"
+            ) from exc
+
+    # Return statements do not mutate the modeled state.
+    #
+    # Return-value verification will later be represented explicitly in
+    # Verification IR instead of being inferred from Python execution.
+
+    # Frame condition: untouched variables retain their value.
+    for name in env_before:
+        if name not in assigned:
+            constraints.append(
+                env_after[name] == env_before[name]
+            )
+
+    return constraints
+
 # ---------------------------------------------------------------------------
 # Core verifier
 # ---------------------------------------------------------------------------
@@ -250,50 +341,123 @@ class HoareVerifier:
         solver = z3.Solver()
         solver.set("timeout", timeout_ms)
 
-        pre  = triple.precondition
+        pre = triple.precondition
         post = triple.postcondition
+        program = triple.program
 
-        # ── Build symbolic environment ──────────────────────────────────
-        all_ids = list(
-            set(_extract_identifiers(pre) + _extract_identifiers(post))
+        # ---------------------------------------------------------------
+        # Build symbolic state environments
+        # ---------------------------------------------------------------
+        #
+        # The Hoare proof must reason about:
+        #
+        #   Pre(state)
+        #   AND
+        #   Transition(state, state')
+        #   AND
+        #   NOT Post(state')
+        #
+        # A satisfying model is therefore a genuine counterexample
+        # showing that the program can violate the post-condition.
+        #
+
+        identifiers = (
+            _extract_identifiers(pre)
+            + _extract_identifiers(post)
+            + _extract_identifiers(program)
         )
-        env: Dict[str, z3.ExprRef] = {
+
+        all_ids = list(dict.fromkeys(
+            name for name in identifiers
+            if name not in _KEYWORDS
+        ))
+
+        env_before: Dict[str, z3.ExprRef] = {
             name: z3.Int(name) for name in all_ids
         }
 
-        # ── Encode pre-condition ────────────────────────────────────────
-        decls_smt2 = _build_smt2_declarations(all_ids)
+        env_after: Dict[str, z3.ExprRef] = {
+            name: z3.Int(f"{name}_after") for name in all_ids
+        }
+
+        # ---------------------------------------------------------------
+        # SMT-LIB declarations
+        # ---------------------------------------------------------------
+        decls_smt2 = "\\n".join(
+            [f"(declare-const {name} Int)" for name in all_ids]
+            + [f"(declare-const {name}_after Int)" for name in all_ids]
+        )
+
+        # ---------------------------------------------------------------
+        # Encode PRE-condition over the BEFORE state
+        # ---------------------------------------------------------------
         if pre.lstrip().startswith("("):
-            # SMT-LIB2 path — declare all symbolic variables first
             constraints = z3.parse_smt2_string(
-                f"{decls_smt2}\n(assert {pre})", decls={}
+                f"{decls_smt2}\\n(assert {pre})",
+                decls={}
             )
             for c in constraints:
                 solver.add(c)
         else:
-            solver.add(_python_expr_to_z3(pre, env))
+            solver.add(_python_expr_to_z3(pre, env_before))
 
-        # ── Add loop invariants ─────────────────────────────────────────
+        # ---------------------------------------------------------------
+        # Encode PROGRAM transition
+        # ---------------------------------------------------------------
+        transition_constraints = _program_to_transition(
+            program,
+            env_before,
+            env_after,
+        )
+
+        for constraint in transition_constraints:
+            solver.add(constraint)
+
+        # ---------------------------------------------------------------
+        # Encode loop invariants over the appropriate state.
+        #
+        # Until explicit loop semantics are added, invariants are treated
+        # as constraints on the BEFORE state.
+        # ---------------------------------------------------------------
         for inv in triple.loop_invariants:
             if inv.lstrip().startswith("("):
                 for c in z3.parse_smt2_string(
-                    f"{decls_smt2}\n(assert {inv})", decls={}
+                    f"{decls_smt2}\\n(assert {inv})",
+                    decls={}
                 ):
                     solver.add(c)
             else:
-                solver.add(_python_expr_to_z3(inv, env))
+                solver.add(_python_expr_to_z3(inv, env_before))
 
-        # ── Encode *negation* of post-condition ─────────────────────────
+        # ---------------------------------------------------------------
+        # Encode NEGATION of POST-condition over the AFTER state
+        # ---------------------------------------------------------------
         if post.lstrip().startswith("("):
             neg_constraints = z3.parse_smt2_string(
-                f"{decls_smt2}\n(assert (not {post}))", decls={}
+                f"{decls_smt2}\\n(assert (not {post}))",
+                decls={}
             )
+
+            # The SMT-LIB parser creates symbols independently, so rebuild
+            # the post-condition with explicit AFTER-state substitution
+            # for the Python path below. SMT-LIB users should reference
+            # *_after variables explicitly when expressing post-state.
             for c in neg_constraints:
                 solver.add(c)
         else:
-            solver.add(z3.Not(_python_expr_to_z3(post, env)))
+            solver.add(
+                z3.Not(
+                    _python_expr_to_z3(post, env_after)
+                )
+            )
 
-        # ── Solve ───────────────────────────────────────────────────────
+        # ---------------------------------------------------------------
+        # Solve:
+        #
+        # UNSAT = no reachable state violates Q = VERIFIED
+        # SAT   = reachable counterexample exists = COUNTEREXAMPLE
+        # UNKNOWN = timeout/incomplete solver result
+        # ---------------------------------------------------------------
         result_str = str(solver.check())
 
         if result_str == "unsat":
@@ -302,24 +466,44 @@ class HoareVerifier:
                 verified=True,
                 verdict=VerificationVerdict.VERIFIED,
             )
+
         elif result_str == "sat":
             model = solver.model()
-            ce = "; ".join(
-                f"{d.name()} = {model[d]}"
-                for d in model.decls()
-            )
+
+            ce_parts = []
+
+            for name in all_ids:
+                before_value = model.eval(
+                    env_before[name],
+                    model_completion=True,
+                )
+
+                after_value = model.eval(
+                    env_after[name],
+                    model_completion=True,
+                )
+
+                ce_parts.append(
+                    f"{name} = {before_value}; "
+                    f"{name}_after = {after_value}"
+                )
+
             return VerificationResult(
                 request_id="",
                 verified=False,
                 verdict=VerificationVerdict.COUNTEREXAMPLE,
-                counterexample=ce,
+                counterexample="; ".join(ce_parts),
             )
-        else:  # unknown / timeout
+
+        else:
             return VerificationResult(
                 request_id="",
                 verified=False,
                 verdict=VerificationVerdict.TIMEOUT,
-                error_detail="Z3 solver returned 'unknown' (timeout or incompleteness)",
+                error_detail=(
+                    "Z3 solver returned 'unknown' "
+                    "(timeout or incompleteness)"
+                ),
             )
 
 

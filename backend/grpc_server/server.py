@@ -118,7 +118,11 @@ class SchemaParserServicer:
     async def transition_fsm(
         self, payload_id: str, schema_name: str, target: FSMStateEnum, tenant_id: str = "public"
     ) -> FSMState:
-        controller = registry.make_controller(payload_id, schema_name, tenant_id=tenant_id)
+        controller = registry.get_or_make_controller(
+            payload_id,
+            schema_name,
+            tenant_id=tenant_id,
+        )
         return controller.transition(target)
 
 
@@ -360,6 +364,194 @@ async def _start_http_server() -> None:
 
 
 # ---------------------------------------------------------------------------
+# gRPC protobuf adapters
+# ---------------------------------------------------------------------------
+
+class _GrpcHoareVerifierServicer:
+    """Adapter from protobuf RPCs to the existing verifier service."""
+
+    def Verify(self, request, context):
+        from grpc_server import hoare_agent_pb2
+
+        internal_request = VerificationRequest(
+            request_id=request.request_id,
+            triple=HoareTriple(
+                precondition=request.triple.precondition,
+                program=request.triple.program,
+                postcondition=request.triple.postcondition,
+                loop_invariants=list(request.triple.loop_invariants),
+            ),
+            timeout_ms=request.timeout_ms or 5000,
+        )
+
+        result = verifier.verify(internal_request)
+
+        return hoare_agent_pb2.VerificationResult(
+            request_id=result.request_id,
+            verified=result.verified,
+            verdict=result.verdict.value
+                if hasattr(result.verdict, "value")
+                else str(result.verdict),
+            counterexample=result.counterexample or "",
+            error_detail=result.error_detail or "",
+            elapsed_ms=int(result.elapsed_ms or 0),
+        )
+
+
+class _GrpcSchemaParserServicer:
+    """Adapter for SchemaParserService."""
+
+    async def ParsePayload(self, request, context):
+        from grpc_server import hoare_agent_pb2
+
+        metadata = dict(request.metadata)
+
+        try:
+            raw_data = json.loads(request.raw_data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                f"raw_data must contain valid UTF-8 JSON: {exc}",
+            )
+            return
+
+        if not isinstance(raw_data, dict):
+            await context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "raw_data JSON must decode to an object/dictionary",
+            )
+            return
+
+        raw = RawPayload(
+            payload_id=request.payload_id,
+            source_name=request.source_name,
+            raw_data=raw_data,
+            metadata=metadata,
+        )
+
+        result = await SchemaParserServicer().parse_payload(
+            raw,
+            tenant_id=metadata.get("tenant_id", "public"),
+        )
+
+        return hoare_agent_pb2.ParsedRecord(
+            payload_id=result.payload_id,
+            schema_name=result.schema_name,
+            structured=json.dumps(result.structured).encode(),
+            valid=result.valid,
+            error=result.error or "",
+            fsm_state=hoare_agent_pb2.FSMState(
+                state=hoare_agent_pb2.FSMStateEnum.Value(
+                    result.fsm_state.state.value
+                    if hasattr(result.fsm_state.state, "value")
+                    else str(result.fsm_state.state)
+                ),
+                payload_id=result.fsm_state.payload_id,
+                detail=result.fsm_state.detail,
+            ),
+        )
+
+    async def ParseStream(self, request_iterator, context):
+        from grpc_server import hoare_agent_pb2
+
+        async for request in request_iterator:
+            result = await self.ParsePayload(request, context)
+            yield result
+
+    async def TransitionFSM(self, request, context):
+        from grpc_server import hoare_agent_pb2
+
+        # The schema is carried through the payload metadata in the
+        # existing HTTP/internal architecture. Use TelemetryEvent as
+        # the same default used elsewhere in this server.
+        schema_name = "TelemetryEvent"
+
+        target_state_name = hoare_agent_pb2.FSMStateEnum.Name(
+            request.target_state
+        )
+
+        state = await SchemaParserServicer().transition_fsm(
+            request.payload_id,
+            schema_name,
+            FSMStateEnum(target_state_name),
+        )
+
+        new_state_name = (
+            state.state.value
+            if hasattr(state.state, "value")
+            else str(state.state)
+        )
+
+        return hoare_agent_pb2.FSMTransitionResult(
+            allowed=True,
+            new_state=hoare_agent_pb2.FSMStateEnum.Value(new_state_name),
+            reason=state.detail or "",
+        )
+
+
+class _GrpcHoareAgentServicer:
+    """Adapter for the end-to-end Hoare agent service."""
+
+    async def RunTask(self, request, context):
+        from grpc_server import hoare_agent_pb2
+
+        internal_request = AgentTaskRequest(
+            task_id=request.task_id,
+            description=request.description,
+            schema_json=request.schema_json,
+            max_retries=request.max_retries or 3,
+        )
+
+        result, _states = await HoareAgentServicer().run_task(internal_request)
+
+        triple = result.triple
+        proof = result.proof
+
+        return hoare_agent_pb2.AgentTaskResult(
+            task_id=result.task_id,
+            generated_code=result.generated_code or "",
+            triple=hoare_agent_pb2.HoareTriple(
+                precondition=triple.precondition,
+                program=triple.program,
+                postcondition=triple.postcondition,
+                loop_invariants=list(triple.loop_invariants),
+            ),
+            proof=hoare_agent_pb2.VerificationResult(
+                request_id=proof.request_id,
+                verified=proof.verified,
+                verdict=proof.verdict.value
+                    if hasattr(proof.verdict, "value")
+                    else str(proof.verdict),
+                counterexample=proof.counterexample or "",
+                error_detail=proof.error_detail or "",
+                elapsed_ms=int(proof.elapsed_ms or 0),
+            ),
+            iterations=result.iterations,
+            success=result.success,
+            failure_reason=result.failure_reason or "",
+        )
+
+    async def WatchFSM(self, request, context):
+        from grpc_server import hoare_agent_pb2
+
+        raw = RawPayload(
+            payload_id=request.payload_id,
+            source_name=request.source_name,
+            raw_data=request.raw_data,
+            metadata=dict(request.metadata),
+        )
+
+        async for state in HoareAgentServicer().watch_fsm(raw):
+            yield hoare_agent_pb2.FSMState(
+                state=int(state.state.value)
+                if hasattr(state.state, "value")
+                else int(state.state),
+                payload_id=state.payload_id,
+                detail=state.detail,
+                timestamp_ms=int(state.timestamp_ms or 0),
+            )
+
+# ---------------------------------------------------------------------------
 # gRPC server (graceful stub — full impl requires generated protobuf stubs)
 # ---------------------------------------------------------------------------
 
@@ -391,7 +583,20 @@ async def _start_grpc_server() -> None:
         return
 
     server = grpc.aio.server()
-    # hoare_agent_pb2_grpc.add_SchemaParserServiceServicer_to_server(...)
+
+    hoare_agent_pb2_grpc.add_SchemaParserServiceServicer_to_server(
+        _GrpcSchemaParserServicer(),
+        server,
+    )
+    hoare_agent_pb2_grpc.add_HoareVerifierServiceServicer_to_server(
+        _GrpcHoareVerifierServicer(),
+        server,
+    )
+    hoare_agent_pb2_grpc.add_HoareAgentServiceServicer_to_server(
+        _GrpcHoareAgentServicer(),
+        server,
+    )
+
     server.add_insecure_port(f"[::]:{_GRPC_PORT}")
     await server.start()
     logger.info("gRPC server listening on port %d", _GRPC_PORT)
