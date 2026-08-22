@@ -1,0 +1,28 @@
+{
+  "name": "hoare-phase31-autonomous-agent",
+  "phase": 31,
+  "mode": "termux-compatible-autonomous-build",
+  "capabilities": [
+    "repository_inspection",
+    "safe_additive_scaffolding",
+    "python_validation",
+    "node_validation",
+    "provider_neutral_planning",
+    "capability_detection",
+    "git_commit_and_push"
+  ],
+  "external_capabilities": [
+    "docker_daemon",
+    "nvidia_gpu",
+    "vllm_gpu_runtime",
+    "cloud_credentials",
+    "managed_database",
+    "managed_message_broker",
+    "cloudflare_dns_changes"
+  ],
+  "safety": {
+    "destructive_cleanup": false,
+    "credential_creation": false,
+    "force_push": false
+  }
+}

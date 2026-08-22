@@ -1,0 +1,15 @@
+{
+  "phase": "31",
+  "generated_at": "20260822T120827Z",
+  "platform": "Linux",
+  "architecture": "aarch64",
+  "termux_detected": true,
+  "termux_execution_policy": {
+    "build_local": true,
+    "run_python_node": true,
+    "run_frontend_dev_server": true,
+    "docker_daemon_required": false,
+    "gpu_llm_required": false,
+    "cloud_credentials_required_for_deploy": true
+  }
+}
