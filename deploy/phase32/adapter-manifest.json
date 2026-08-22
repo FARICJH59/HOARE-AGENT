@@ -1,0 +1,31 @@
+{
+  "phase": 32,
+  "adapter_contract": "agent/adapters/TargetAdapter.ts",
+  "registry": "agent/adapters/AdapterRegistry.ts",
+  "adapters": [
+    {
+      "id": "termux-local",
+      "role": "local-execution-worker",
+      "build": true,
+      "test": true,
+      "deploy": false
+    },
+    {
+      "id": "vercel-prod",
+      "role": "production-deployment-target",
+      "build": false,
+      "test": false,
+      "deploy": true,
+      "requires_external_runtime": true,
+      "approval_required": true
+    },
+    {
+      "id": "customer-vite",
+      "role": "customer-managed-vite-target",
+      "build": true,
+      "test": true,
+      "deploy": true,
+      "requires_external_runtime_for_deploy": true
+    }
+  ]
+}
