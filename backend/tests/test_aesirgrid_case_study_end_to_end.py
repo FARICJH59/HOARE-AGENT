@@ -3,14 +3,15 @@
 Provenance: 2026-09-14
 
 This test deliberately stops at the executor seam. It proves that the
-enterprise product can reach controlled admission, but physical execution is
-still represented only by an injected executor callback.
+enterprise product can reach controlled admission and that the existing
+executor callback is invoked only after explicit authority admission.
 """
 
 from hoare_engine.aesirgrid_authority import (
     AuthorityLease,
     AuthorityStatus,
     ControlledActionRequest,
+    authorize_product,
 )
 from hoare_engine.aesirgrid_case_study import (
     AegisDecision,
@@ -23,12 +24,7 @@ from hoare_engine.governed_execution import execute_governed
 from hoare_engine.product_factory import ProductLifecycle, build_product_definition
 
 
-def test_aesirgrid_intent_to_shadow_to_controlled_admission():
-    intent = (
-        "Build an energy-grid predictive-maintenance system for AesirGrid "
-        "using telemetry from grid assets."
-    )
-
+def _build_staged_product():
     product = build_product_definition(
         product_id="aesirgrid-predictive-maintenance",
         product_version="1.0.0",
@@ -48,9 +44,8 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
         deployment_profiles=("simulation", "shadow", "controlled", "live"),
         vertical_ip_refs=("aesirgrid:grid-models:v1",),
         customer_ip_refs=("customer:grid-operator:telemetry:v1",),
-        metadata={"intent": intent, "case_study": "HOARE-CS-001"},
+        metadata={"intent": "Build an energy-grid predictive-maintenance system for AesirGrid using telemetry from grid assets.", "case_study": "HOARE-CS-001"},
     )
-
     for state in (
         ProductLifecycle.PLANNED,
         ProductLifecycle.BUILDING,
@@ -59,28 +54,30 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
         ProductLifecycle.STAGED,
     ):
         product = product.transition(state)
+    return product
+
+
+def _controlled_request(product, lease=None):
+    return ControlledActionRequest(
+        tenant_id="tenant-grid-001",
+        product_id=product.product_id,
+        action="apply_maintenance_setpoint",
+        requested_mode=AesirGridMode.CONTROLLED,
+        now_s=150.0,
+        lease=lease,
+    )
+
+
+def test_aesirgrid_intent_to_shadow_to_controlled_admission():
+    product = _build_staged_product()
 
     assert product.lifecycle_state is ProductLifecycle.STAGED
     assert product.can_execute is False
 
     telemetry = SyntheticGridTelemetryProvider(
         [
-            GridTelemetry(
-                asset_id="substation-001",
-                temperature_c=58.0,
-                vibration_mm_s=2.0,
-                load_pct=72.0,
-                frequency_hz=60.01,
-                timestamp_s=1000.0,
-            ),
-            GridTelemetry(
-                asset_id="substation-002",
-                temperature_c=104.0,
-                vibration_mm_s=9.0,
-                load_pct=94.0,
-                frequency_hz=59.70,
-                timestamp_s=1000.0,
-            ),
+            GridTelemetry("substation-001", 58.0, 2.0, 72.0, 60.01, 1000.0),
+            GridTelemetry("substation-002", 104.0, 9.0, 94.0, 59.70, 1000.0),
         ]
     )
 
@@ -91,18 +88,9 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
     assert shadow.decision is AegisDecision.ALLOW
     assert shadow.mode is AesirGridMode.SHADOW
 
-    request = ControlledActionRequest(
-        tenant_id="tenant-grid-001",
-        product_id=product.product_id,
-        action="apply_maintenance_setpoint",
-        requested_mode=AesirGridMode.CONTROLLED,
-        now_s=150.0,
-        lease=None,
-    )
-
     calls = []
     escalated = execute_governed(
-        request,
+        _controlled_request(product),
         lambda: calls.append("executed") or "should-not-run",
     )
 
@@ -119,17 +107,21 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
         expires_at_s=200.0,
         status=AuthorityStatus.VALID,
     )
-    authorized_request = ControlledActionRequest(
-        tenant_id="tenant-grid-001",
-        product_id=product.product_id,
-        action="apply_maintenance_setpoint",
-        requested_mode=AesirGridMode.CONTROLLED,
-        now_s=150.0,
-        lease=lease,
+    admission_request = _controlled_request(product, lease)
+    admission = execute_governed(
+        admission_request,
+        lambda: None,
     )
 
+    assert admission.admission.decision is AegisDecision.ALLOW
+    assert admission.executed is True
+
+    authorized_product = authorize_product(product, admission.admission)
+    assert authorized_product.lifecycle_state is ProductLifecycle.AUTHORIZED
+    assert authorized_product.can_execute is False
+
     executed = execute_governed(
-        authorized_request,
+        _controlled_request(authorized_product, lease),
         lambda: calls.append("executed") or "executor-result",
     )
 
