@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import secrets
 from dataclasses import dataclass
+from typing import Callable
 
 from .audit import GitHubAuditLog
 from .permissions import GitHubAction, GitHubRepositoryScope
@@ -32,11 +33,18 @@ class GitHubInstallation:
 class GitHubBroker:
     """Governed broker between HOARE and customer GitHub repositories."""
 
-    def __init__(self, *, gate: AegisGitHubGate | None = None, audit: GitHubAuditLog | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        gate: AegisGitHubGate | None = None,
+        audit: GitHubAuditLog | None = None,
+        client_factory: Callable[[str], object] | None = None,
+    ) -> None:
         self._gate = gate or AegisGitHubGate()
         self._audit = audit or GitHubAuditLog()
+        self._client_factory = client_factory or GitHubRepositoryClient
         self._scopes: dict[tuple[str, str], GitHubRepositoryScope] = {}
-        self._clients: dict[tuple[str, str], GitHubRepositoryClient] = {}
+        self._clients: dict[tuple[str, str], object] = {}
 
     @property
     def audit(self) -> GitHubAuditLog:
@@ -55,7 +63,7 @@ class GitHubBroker:
             raise GitHubIntegrationError("tenant_id and installation_id are required")
         if not repositories:
             raise GitHubIntegrationError("at least one repository must be granted")
-        client = GitHubRepositoryClient(token)
+        client = self._client_factory(token)
         for repository in repositories:
             client.repository(repository)
             scope = GitHubRepositoryScope(
@@ -77,7 +85,7 @@ class GitHubBroker:
     def scope(self, tenant_id: str, repository: str) -> GitHubRepositoryScope | None:
         return self._scopes.get((tenant_id, repository))
 
-    def _client(self, tenant_id: str, repository: str) -> GitHubRepositoryClient:
+    def _client(self, tenant_id: str, repository: str):  # noqa: ANN202
         try:
             return self._clients[(tenant_id, repository)]
         except KeyError as exc:
