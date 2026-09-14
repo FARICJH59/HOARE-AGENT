@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
+from hoare_engine.product_factory import ProductDefinition, ProductLifecycle
 
 
 class AuthorityStatus(str, Enum):
@@ -115,10 +116,24 @@ def admit_controlled_action(
     )
 
 
+def authorize_product(
+    product: ProductDefinition,
+    admission: ControlledAdmission,
+) -> ProductDefinition:
+    """Cross STAGED -> AUTHORIZED only after a successful admission decision."""
+
+    if product.lifecycle_state is not ProductLifecycle.STAGED:
+        raise ValueError("product must be STAGED before authorization")
+    if admission.decision is not AegisDecision.ALLOW:
+        raise ValueError("product authorization requires an ALLOW admission")
+    return product.transition(ProductLifecycle.AUTHORIZED)
+
+
 __all__ = [
     "AuthorityLease",
     "AuthorityStatus",
     "ControlledActionRequest",
     "ControlledAdmission",
     "admit_controlled_action",
+    "authorize_product",
 ]
