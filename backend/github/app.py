@@ -6,6 +6,7 @@ import os
 
 from .broker import GitHubBroker, GitHubIntegrationError
 from .permissions import GitHubAction, GitHubPermissionSet
+from .repository import GitHubTransportError
 
 
 def register_github_routes(routes, broker: GitHubBroker | None = None):  # noqa: ANN001
@@ -54,7 +55,7 @@ def register_github_routes(routes, broker: GitHubBroker | None = None):  # noqa:
                 permissions=permissions,
                 token=token,
             )
-        except (KeyError, ValueError, GitHubIntegrationError) as exc:
+        except (KeyError, ValueError, GitHubIntegrationError, GitHubTransportError) as exc:
             return web.json_response({"error": str(exc)}, status=400)
         return web.json_response(result, status=201)
 
@@ -137,11 +138,7 @@ def register_github_routes(routes, broker: GitHubBroker | None = None):  # noqa:
 
     @routes.post("/integrations/github/action")
     async def github_action(req: web.Request) -> web.Response:
-        """Evaluate an arbitrary GitHub action without bypassing AEGIS.
-
-        This endpoint intentionally exposes only actions already represented by
-        the permission model. Unknown actions are rejected rather than guessed.
-        """
+        """Evaluate an arbitrary GitHub action without bypassing AEGIS."""
         auth_ctx = req["auth_ctx"]
         body = await req.json()
         try:
