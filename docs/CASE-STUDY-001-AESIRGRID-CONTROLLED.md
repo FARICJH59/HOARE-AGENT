@@ -1,8 +1,8 @@
 # HOARE Case Study #1 — Controlled Admission Boundary
 
-**Provenance:** 2026-09-12
+**Provenance:** 2026-09-14
 
-This document records the next validation boundary after synthetic shadow analysis.
+This document records the validation boundary after synthetic shadow analysis.
 
 ## Boundary
 
@@ -21,7 +21,7 @@ AEGIS ADMISSION
 INJECTED EXISTING EXECUTOR
 ```
 
-The important property is that the case-study code does **not** implement a new physical executor. It accepts an executor through dependency injection and guarantees that the executor cannot be called until the authority boundary returns `ALLOW`.
+The case-study code does **not** implement a new physical executor. The canonical `governed_execution` seam accepts an executor through dependency injection and guarantees that it cannot be called until the authority boundary returns `ALLOW`.
 
 ## Lease requirements
 
@@ -36,9 +36,7 @@ A controlled request must match:
 
 A missing lease produces `ESCALATE`, while a mismatched, expired, or revoked lease produces `DENY`.
 
-## Why this matters
-
-This establishes the architectural separation:
+## Architectural separation
 
 ```text
 HOARE = authority / governance / evidence
@@ -51,16 +49,20 @@ HOARE does not become the machine controller merely because it governs the contr
 
 `SIMULATION` and `SHADOW` remain non-physical analysis modes. `CONTROLLED` and `LIVE` require explicit authority. The case study still does not issue a real grid command.
 
-## Test entry point
+## Canonical implementation
 
 ```text
-backend/tests/test_aesirgrid_authority.py
-backend/tests/test_aesirgrid_control_boundary.py
+backend/hoare_engine/governed_execution.py
+backend/tests/test_governed_execution.py
 ```
 
 Focused command:
 
 ```bash
 cd backend
-pytest tests/test_aesirgrid_authority.py tests/test_aesirgrid_control_boundary.py -v
+pytest tests/test_case_study_aesirgrid.py tests/test_aesirgrid_simulation.py tests/test_aesirgrid_authority.py tests/test_governed_execution.py tests/test_aesirgrid_case_study_end_to_end.py -v
 ```
+
+## Validation status
+
+GitHub currently has no workflow run attached to the latest case-study head, so no CI pass is claimed yet. The repository's README documents the same local backend test pattern (`pip install -r requirements.txt pytest` followed by `pytest`).
