@@ -36,7 +36,7 @@ AEGIS ADMISSION
   EXISTING EXECUTOR
 ```
 
-The executor seam is intentionally **executor-neutral**. HOARE does not become the physical grid controller and does not replace the existing executor.
+The canonical executor seam is `hoare_engine.governed_execution`. HOARE governs admission but does not become the physical grid controller and does not replace the existing executor.
 
 ## Controlled admission invariants
 
@@ -52,22 +52,44 @@ A controlled action cannot invoke the executor unless all of these are true:
 
 Missing authority produces `ESCALATE`. Invalid, expired, revoked, or mismatched authority produces `DENY`. Only valid authority produces `ALLOW` and permits the caller-supplied executor to run.
 
+## End-to-end case-study validation
+
+The focused end-to-end test now connects the layers in one scenario:
+
+```text
+enterprise intent
+  → proprietary product definition
+  → VERIFIED/STAGED lifecycle
+  → synthetic telemetry
+  → predictive-maintenance assessment
+  → SHADOW ALLOW
+  → CONTROLLED request
+  → missing lease ESCALATE
+  → valid lease ALLOW
+  → injected executor invoked
+```
+
+This is still an executor-seam test, not a live grid-control test.
+
 ## Test entry points
 
 ```text
 backend/tests/test_case_study_aesirgrid.py
 backend/tests/test_aesirgrid_simulation.py
 backend/tests/test_aesirgrid_authority.py
-backend/tests/test_aesirgrid_executor.py
+backend/tests/test_governed_execution.py
+backend/tests/test_aesirgrid_case_study_end_to_end.py
 ```
 
 Focused command:
 
 ```bash
 cd backend
-pytest tests/test_case_study_aesirgrid.py tests/test_aesirgrid_simulation.py tests/test_aesirgrid_authority.py tests/test_aesirgrid_executor.py -v
+pytest tests/test_case_study_aesirgrid.py tests/test_aesirgrid_simulation.py tests/test_aesirgrid_authority.py tests/test_governed_execution.py tests/test_aesirgrid_case_study_end_to_end.py -v
 ```
+
+The repository README documents the backend setup pattern as `pip install -r requirements.txt pytest` followed by `pytest tests/ -v`.
 
 ## Validation status
 
-The implementation has been committed to the existing PR branch. GitHub workflow/status execution still needs to validate the focused suite; no CI pass is claimed until that evidence exists.
+The implementation is committed to the existing PR branch. GitHub currently reports no workflow run attached to the latest case-study head, so **no CI pass is claimed yet**. The next evidence required is an actual focused-suite execution result.
