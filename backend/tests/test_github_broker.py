@@ -8,7 +8,7 @@ from github.policy import AegisDecision, GitHubActionRequest
 
 
 class FakeClient:
-    def __init__(self):
+    def __init__(self, _token: str):
         self.calls = []
 
     def repository(self, repository):
@@ -18,6 +18,10 @@ class FakeClient:
     def contents(self, repository, path="", ref=None):
         self.calls.append(("contents", repository, path, ref))
         return {"path": path, "ref": ref}
+
+
+def _broker() -> GitHubBroker:
+    return GitHubBroker(client_factory=FakeClient)
 
 
 def _install(broker: GitHubBroker) -> None:
@@ -31,9 +35,8 @@ def _install(broker: GitHubBroker) -> None:
 
 
 def test_broker_allows_scoped_read() -> None:
-    broker = GitHubBroker()
+    broker = _broker()
     _install(broker)
-    broker._clients[("tenant-a", "customer/app")] = FakeClient()  # noqa: SLF001
 
     result = broker.contents(
         actor="api-key",
@@ -47,7 +50,7 @@ def test_broker_allows_scoped_read() -> None:
 
 
 def test_broker_denies_out_of_scope_repository_before_transport() -> None:
-    broker = GitHubBroker()
+    broker = _broker()
     _install(broker)
     with pytest.raises(PermissionError, match="DENY"):
         broker.contents(
@@ -59,7 +62,7 @@ def test_broker_denies_out_of_scope_repository_before_transport() -> None:
 
 
 def test_broker_does_not_expose_secret_permission() -> None:
-    broker = GitHubBroker()
+    broker = _broker()
     _install(broker)
     decision = broker.evaluate(
         actor="api-key",
