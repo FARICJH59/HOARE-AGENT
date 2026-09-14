@@ -11,47 +11,37 @@ This is the first formal case study for validating **HOARE itself**, rather than
 
 The question is:
 
-> Can one real enterprise intent move through HOARE's governed product-factory boundary into a verified, staged proprietary product definition without creating a separate platform or granting the generated product execution authority?
+> Can one real enterprise intent move through HOARE's governed product factory, process synthetic grid telemetry, identify a maintenance signal, and reach a governed shadow decision without creating a separate platform or granting the generated product execution authority?
 
-## Business intent
-
-> Build an energy-grid predictive-maintenance system for AesirGrid using telemetry from grid assets.
-
-## Governed flow
+## Current proven flow
 
 ```text
 INTENT
   ↓
-UNDERSTAND
+PRODUCT DEFINITION
   ↓
-ARCHITECT
+CAPABILITY COMPOSITION
   ↓
-CAPABILITY DISCOVERY
+PLANNED → BUILDING → TESTING → VERIFIED → STAGED
   ↓
-REUSE / COMPOSE / EXTEND / CREATE
+SYNTHETIC GRID TELEMETRY
   ↓
-BUILD
+PREDICTIVE-MAINTENANCE ASSESSMENT
   ↓
-TEST
+TELEMETRY / EVIDENCE CHECKS
   ↓
-VERIFY
+AEGIS SHADOW DECISION
   ↓
-AEGIS REVIEW
+SHADOW ANALYSIS ALLOWED
   ↓
-STAGED
-  ↓
-[explicit AUTHORIZED boundary]
-  ↓
-DEPLOYED
-  ↓
-OPERATING
+NO PHYSICAL CONTROL
 ```
 
-The implemented case study currently proves the control-plane portion through `STAGED`. It deliberately does **not** pretend that a product definition is deployment authority.
+The implemented case study now reaches the **provider-backed synthetic shadow boundary**. The provider is an explicit abstraction (`TelemetryProvider`) with a deterministic `SyntheticGridTelemetryProvider` implementation. No real grid or cloud provider is contacted.
 
 ## Product composition
 
-The case study composes these capabilities:
+The product definition composes:
 
 - Telemetry
 - PredictiveMaintenance
@@ -67,48 +57,78 @@ It binds the product to:
 - NIST-AI-RMF compliance profile
 - telemetry-integrity, model-verification, and AEGIS-authorization evidence requirements
 
+## Synthetic telemetry
+
+The case study uses deterministic synthetic assets with:
+
+- temperature
+- vibration
+- load percentage
+- grid frequency
+- timestamp
+
+A deliberately anomalous sample raises temperature, vibration, load, and frequency-deviation penalties. The resulting health score becomes an explicit predictive-maintenance signal.
+
+## Governance proof
+
+The shadow workflow verifies:
+
+1. Telemetry is supplied through a provider boundary.
+2. Invalid telemetry fails closed.
+3. Predictive-maintenance assessment is deterministic and testable.
+4. Fresh telemetry is required.
+5. Required evidence is required.
+6. Shadow analysis may be ALLOWED.
+7. Shadow ALLOW explicitly means **analysis only; no physical control**.
+8. `CONTROLLED` and `LIVE` modes require ESCALATE / explicit authority.
+9. Stale telemetry is DENIED.
+10. Incomplete evidence is DENIED.
+
 ## IP boundary
 
-The case study explicitly keeps vertical IP and customer IP separate:
+The case study keeps vertical IP and customer IP separate:
 
 - Vertical IP: `aesirgrid:grid-models:v1`
 - Customer IP: `customer:grid-operator:telemetry:v1`
 
-This is a required property of the Tech Fusion product factory. Customer data and customer-specific artifacts must not become Tech Fusion vertical IP merely because HOARE used them to build or operate a solution.
-
-## Governance proof
-
-The case study verifies that:
-
-1. The product is owned by Tech Fusion AI ML LLC.
-2. The lifecycle advances sequentially through `PLANNED → BUILDING → TESTING → VERIFIED → STAGED`.
-3. The product definition has `product-definition-only` authority.
-4. `can_execute` remains false.
-5. `STAGED` cannot jump directly to `DEPLOYED`.
-6. Vertical IP and customer IP remain distinct.
-7. Evidence requirements are part of the product definition.
-
 ## What this proves
 
-This case study is stronger than a collection of unrelated unit tests because it binds one enterprise intent to one concrete vertical product definition and carries that definition through a governed lifecycle.
+This is now a stronger end-to-end HOARE case study:
 
-It is **not yet a live AesirGrid deployment test**. Live telemetry, model execution, infrastructure provisioning, and production control remain separate governed operations that require their own adapters, verification, evidence, and AEGIS authorization.
+```text
+enterprise intent
+      ↓
+proprietary product definition
+      ↓
+verified/staged lifecycle
+      ↓
+synthetic telemetry provider
+      ↓
+predictive-maintenance analysis
+      ↓
+evidence + freshness gates
+      ↓
+AEGIS governance
+      ↓
+shadow analysis
+```
 
-## Test entry point
+It still does **not** claim live AesirGrid operation. No physical grid command, production deployment, or live control authority is implemented by this case study.
+
+## Next validation boundary
+
+The next step is a controlled-mode authorization test that demonstrates an explicit authority artifact/lease before any controlled action can be admitted. That should remain separate from the local high-frequency controller and should not replace the existing executor.
+
+## Test entry points
 
 ```text
 backend/tests/test_case_study_aesirgrid.py
+backend/tests/test_aesirgrid_simulation.py
 ```
 
-Run the case study from the repository's backend environment with:
+Run the focused suite locally:
 
 ```bash
 cd backend
-pytest tests/test_case_study_aesirgrid.py -v
+pytest tests/test_case_study_aesirgrid.py tests/test_aesirgrid_simulation.py -v
 ```
-
-## Enterprise validation criterion
-
-HOARE Case Study #1 is considered complete at the control-plane level when the case-study test passes and demonstrates the complete governed path from business intent to `STAGED` without bypassing authorization boundaries.
-
-The next validation layer is a provider-backed AesirGrid simulation/shadow workflow. That layer should be added without changing the core product-factory contract or replacing the existing executor.
