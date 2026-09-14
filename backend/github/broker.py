@@ -89,6 +89,16 @@ class GitHubBroker:
         actor: str,
         request: GitHubActionRequest,
     ) -> AegisGitHubDecision:
+        if isinstance(request.action, str):
+            request = GitHubActionRequest(
+                tenant_id=request.tenant_id,
+                repository=request.repository,
+                action=GitHubAction(request.action),
+                branch=request.branch,
+                production=request.production,
+                reason=request.reason,
+                request_id=request.request_id,
+            )
         decision = self._gate.evaluate(request, self.scope(request.tenant_id, request.repository))
         self._audit.log(
             tenant_id=request.tenant_id,
