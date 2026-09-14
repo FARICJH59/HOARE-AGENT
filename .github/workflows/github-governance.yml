@@ -38,7 +38,8 @@ jobs:
             backend/github/audit.py \
             backend/github/repository.py \
             backend/github/broker.py \
-            backend/github/app.py
+            backend/github/app.py \
+            scripts/wire_github_routes.py
 
       - name: Run GitHub governance tests
         env:
@@ -48,4 +49,5 @@ jobs:
             backend/tests/test_github_permissions.py \
             backend/tests/test_github_policy.py \
             backend/tests/test_github_audit.py \
-            backend/tests/test_github_broker.py
+            backend/tests/test_github_broker.py \
+            backend/tests/test_github_routes.py
