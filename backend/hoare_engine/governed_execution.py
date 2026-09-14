@@ -17,6 +17,7 @@ from hoare_engine.aesirgrid_authority import (
     ControlledAdmission,
     admit_controlled_action,
 )
+from hoare_engine.aesirgrid_case_study import AegisDecision
 from hoare_engine.product_factory import ProductDefinition, ProductLifecycle
 
 T = TypeVar("T")
@@ -45,20 +46,20 @@ def execute_governed(
     """
 
     admission = admit_controlled_action(request)
-    if admission.decision.value != "ALLOW":
+    if admission.decision is not AegisDecision.ALLOW:
         return GovernedExecutionResult(admission=admission, executed=False)
 
     if product is not None:
         if product.product_id != request.product_id:
             denied = ControlledAdmission(
-                decision=admission.decision.DENY,
+                decision=AegisDecision.DENY,
                 reason="product definition does not match execution request",
                 lease_id=admission.lease_id,
             )
             return GovernedExecutionResult(admission=denied, executed=False)
         if product.lifecycle_state is not ProductLifecycle.AUTHORIZED:
             denied = ControlledAdmission(
-                decision=admission.decision.DENY,
+                decision=AegisDecision.DENY,
                 reason="product must be AUTHORIZED before governed execution",
                 lease_id=admission.lease_id,
             )
