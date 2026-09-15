@@ -67,6 +67,31 @@ def test_shadow_workflow_uses_provider_boundary_and_aegis_allows_analysis():
     assert "evidence-complete" in decision.evidence
 
 
+def test_empty_telemetry_is_denied():
+    assessments, decision = run_aesirgrid_shadow(
+        SyntheticGridTelemetryProvider([]),
+        telemetry_fresh=True,
+        evidence_complete=True,
+    )
+
+    assert assessments == ()
+    assert decision.decision is AegisDecision.DENY
+    assert decision.mode is AesirGridMode.SHADOW
+    assert decision.reason == "no assessments available"
+
+
+def test_empty_assessments_are_denied_for_simulation_too():
+    decision = evaluate_aegis(
+        mode=AesirGridMode.SIMULATION,
+        assessments=(),
+        telemetry_fresh=True,
+        evidence_complete=True,
+    )
+
+    assert decision.decision is AegisDecision.DENY
+    assert decision.reason == "no assessments available"
+
+
 def test_stale_telemetry_is_denied():
     decision = evaluate_aegis(
         mode=AesirGridMode.SHADOW,
