@@ -21,11 +21,17 @@ The default is a **target preference**, not a deployment authorization. AEGIS, p
 
 ## Why Cloudflare is the default
 
-Cloudflare Workers provides a globally distributed serverless execution platform and supports JavaScript/TypeScript, Python, Rust, and other application stacks. citeturn0search7
+Cloudflare Workers provides a globally distributed serverless execution platform and supports JavaScript/TypeScript, Python, Rust, and other application stacks.
 
-For multi-tenant client projects, Cloudflare Workers for Platforms provides isolated customer Workers, dispatch namespaces, dynamic routing, per-customer limits, and bindings to resources such as KV, D1, R2, Queues, Workflows, Containers, and private-network services. citeturn0search1turn0search3turn0search8
+Official reference: https://developers.cloudflare.com/workers/
 
-Cloudflare also documents programmatic deployment of customer Workers through its API/SDK, which fits HOARE's provider-adapter model. citeturn0search5
+For multi-tenant client projects, Cloudflare Workers for Platforms provides isolated customer Workers, dispatch namespaces, dynamic routing, per-customer limits, and bindings to resources such as KV, D1, R2, Queues, Workflows, Containers, and private-network services.
+
+Official reference: https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/
+
+Cloudflare also documents programmatic deployment of customer Workers through its API/SDK, which fits HOARE's provider-adapter model.
+
+Official reference: https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/reference/platform-examples/
 
 ## Client override
 
@@ -78,9 +84,15 @@ DEPLOYMENT ADAPTER
 CLOUDFLARE
 ```
 
-Cloudflare credentials must never be placed in generated customer source code or exposed to the browser. Cloudflare's current documentation recommends scoped API tokens for automation; Workers permissions can be scoped to the required Worker/resource, and API tokens are intended for CI/CD systems, agents, scripts, and Wrangler automation. citeturn0search12turn0search13
+Cloudflare credentials must never be placed in generated customer source code or exposed to the browser. Cloudflare's current documentation supports scoped Workers roles and API tokens for CI/CD systems, agents, scripts, and Wrangler automation.
 
-For Workers for Platforms, Cloudflare's documented production pattern uses a permanent Cloudflare account and appropriate API authentication rather than temporary preview credentials. citeturn0search18
+Official references:
+- https://developers.cloudflare.com/workers/authorization/workers/
+- https://developers.cloudflare.com/workers/authorization/
+
+For Workers for Platforms, Cloudflare's production guidance uses a permanent Cloudflare account and appropriate API authentication rather than temporary preview credentials.
+
+Official reference: https://developers.cloudflare.com/workers/platform/claim-deployments/
 
 ## Implementation
 
