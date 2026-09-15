@@ -7,10 +7,16 @@ on:
       - 'backend/tests/test_case_study_aesirgrid.py'
       - 'backend/tests/test_aesirgrid_simulation.py'
       - 'backend/tests/test_aesirgrid_authority.py'
+      - 'backend/tests/test_aesirgrid_control_boundary.py'
+      - 'backend/tests/test_aesirgrid_case_study_end_to_end.py'
+      - 'backend/tests/test_governed_execution.py'
       - 'docs/CASE-STUDY-001-AESIRGRID.md'
+      - 'docs/CASE-STUDY-001-AESIRGRID-CONTROLLED.md'
+      - 'docs/CASE-STUDY-001-AUTHORITY-BOUNDARY.md'
       - '.github/workflows/hoare-aesirgrid-case-study.yml'
   push:
     branches:
+      - main
       - feat/hoare-aesirgrid-case-study
 
 jobs:
@@ -40,4 +46,7 @@ jobs:
             tests/test_case_study_aesirgrid.py \
             tests/test_aesirgrid_simulation.py \
             tests/test_aesirgrid_authority.py \
+            tests/test_aesirgrid_control_boundary.py \
+            tests/test_aesirgrid_case_study_end_to_end.py \
+            tests/test_governed_execution.py \
             -v
