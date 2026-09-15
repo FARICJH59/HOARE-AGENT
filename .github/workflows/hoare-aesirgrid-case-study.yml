@@ -1,0 +1,43 @@
+name: HOARE AesirGrid Case Study
+
+on:
+  pull_request:
+    paths:
+      - 'backend/hoare_engine/**'
+      - 'backend/tests/test_case_study_aesirgrid.py'
+      - 'backend/tests/test_aesirgrid_simulation.py'
+      - 'backend/tests/test_aesirgrid_authority.py'
+      - 'docs/CASE-STUDY-001-AESIRGRID.md'
+      - '.github/workflows/hoare-aesirgrid-case-study.yml'
+  push:
+    branches:
+      - feat/hoare-aesirgrid-case-study
+
+jobs:
+  case-study:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run AesirGrid case study
+        run: |
+          pytest \
+            tests/test_case_study_aesirgrid.py \
+            tests/test_aesirgrid_simulation.py \
+            tests/test_aesirgrid_authority.py \
+            -v
