@@ -102,7 +102,7 @@ def admit_controlled_action(
             lease_id=lease.lease_id,
         )
 
-    if not request.action.strip():
+    if not isinstance(request.action, str) or not request.action.strip():
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="controlled action is required",
