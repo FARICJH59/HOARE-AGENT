@@ -13,6 +13,7 @@ from hoare_engine.aesirgrid_case_study import (
     run_aesirgrid_shadow,
 )
 from hoare_engine.aesirgrid_authority import (
+    AuthorityLease,
     ControlledActionRequest,
     admit_controlled_action,
 )
@@ -26,6 +27,17 @@ def _nominal():
         load_pct=72.0,
         frequency_hz=60.01,
         timestamp_s=1000.0,
+    )
+
+
+def _lease():
+    return AuthorityLease(
+        lease_id="lease-001",
+        tenant_id="tenant-grid-001",
+        product_id="aesirgrid-predictive-maintenance",
+        mode=AesirGridMode.CONTROLLED,
+        issued_at_s=100.0,
+        expires_at_s=200.0,
     )
 
 
@@ -58,33 +70,23 @@ def test_non_string_action_fails_closed_without_exception():
         action=None,
         requested_mode=AesirGridMode.CONTROLLED,
         now_s=150.0,
-        lease=None,
+        lease=_lease(),
     )
 
     result = admit_controlled_action(request)
 
-    assert result.decision is AegisDecision.ESCALATE
-    assert result.reason == "explicit authority lease required"
+    assert result.decision is AegisDecision.DENY
+    assert result.reason == "controlled action is required"
 
 
 def test_empty_string_action_is_denied_with_valid_lease():
-    from hoare_engine.aesirgrid_authority import AuthorityLease
-
-    lease = AuthorityLease(
-        lease_id="lease-001",
-        tenant_id="tenant-grid-001",
-        product_id="aesirgrid-predictive-maintenance",
-        mode=AesirGridMode.CONTROLLED,
-        issued_at_s=100.0,
-        expires_at_s=200.0,
-    )
     request = ControlledActionRequest(
         tenant_id="tenant-grid-001",
         product_id="aesirgrid-predictive-maintenance",
         action="",
         requested_mode=AesirGridMode.CONTROLLED,
         now_s=150.0,
-        lease=lease,
+        lease=_lease(),
     )
 
     result = admit_controlled_action(request)
