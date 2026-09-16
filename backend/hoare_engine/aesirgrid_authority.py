@@ -1,10 +1,11 @@
 """Explicit authority/lease boundary for the AesirGrid case study.
 
-Provenance: 2026-09-12
+Provenance: 2026-09-16
 
 This module admits a controlled action only when a valid, unexpired authority
-artifact is presented and AEGIS permits the requested mode. It does not issue
-physical commands or replace the existing executor.
+artifact is presented and AEGIS permits the requested mode. The lease is
+bound to the exact action it authorizes. It does not issue physical commands
+or replace the existing executor.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ class AuthorityLease:
     lease_id: str
     tenant_id: str
     product_id: str
+    action: str
     mode: AesirGridMode
     issued_at_s: float
     expires_at_s: float
@@ -59,7 +61,7 @@ class ControlledAdmission:
 def admit_controlled_action(
     request: ControlledActionRequest,
 ) -> ControlledAdmission:
-    """Admit a controlled action only across the explicit authority boundary."""
+    """Admit only an explicitly leased, exactly scoped controlled/live action."""
 
     if request.requested_mode not in {
         AesirGridMode.CONTROLLED,
@@ -89,23 +91,38 @@ def admit_controlled_action(
             reason="authority lease product mismatch",
         )
 
+    if not isinstance(request.action, str) or not request.action.strip():
+        return ControlledAdmission(
+            decision=AegisDecision.DENY,
+            reason="controlled action is required",
+            lease_id=lease.lease_id,
+        )
+
+    if not isinstance(lease.action, str) or not lease.action.strip():
+        return ControlledAdmission(
+            decision=AegisDecision.DENY,
+            reason="authority lease action is required",
+            lease_id=lease.lease_id,
+        )
+
+    if lease.action != request.action:
+        return ControlledAdmission(
+            decision=AegisDecision.DENY,
+            reason="authority lease action mismatch",
+            lease_id=lease.lease_id,
+        )
+
     if lease.mode is not request.requested_mode:
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="authority lease mode mismatch",
+            lease_id=lease.lease_id,
         )
 
     if not lease.is_valid_at(request.now_s):
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="authority lease is expired or revoked",
-            lease_id=lease.lease_id,
-        )
-
-    if not isinstance(request.action, str) or not request.action.strip():
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="controlled action is required",
             lease_id=lease.lease_id,
         )
 
