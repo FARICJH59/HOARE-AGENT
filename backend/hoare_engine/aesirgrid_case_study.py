@@ -140,6 +140,14 @@ def evaluate_aegis(
             evidence=tuple(evidence),
         )
 
+    if not assessments:
+        return GovernanceDecision(
+            decision=AegisDecision.DENY,
+            mode=mode,
+            reason="no telemetry assessments available",
+            evidence=tuple(evidence),
+        )
+
     if any(item.confidence < 0.90 for item in assessments):
         return GovernanceDecision(
             decision=AegisDecision.ESCALATE,
