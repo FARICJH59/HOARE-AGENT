@@ -3,13 +3,17 @@
 Provenance: 2026-09-14
 """
 
+import pytest
+
 from hoare_engine.aesirgrid_authority import (
     AuthorityLease,
     AuthorityStatus,
     ControlledActionRequest,
     admit_controlled_action,
+    authorize_product,
 )
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
+from hoare_engine.product_factory import ProductLifecycle, build_product_definition
 
 
 def _lease(**overrides):
@@ -37,6 +41,23 @@ def _request(**overrides):
     )
     values.update(overrides)
     return ControlledActionRequest(**values)
+
+
+def _staged_product():
+    product = build_product_definition(
+        product_id="aesirgrid-predictive-maintenance",
+        product_version="1.0.0",
+        domain="energy",
+    )
+    for target in (
+        ProductLifecycle.PLANNED,
+        ProductLifecycle.BUILDING,
+        ProductLifecycle.TESTING,
+        ProductLifecycle.VERIFIED,
+        ProductLifecycle.STAGED,
+    ):
+        product = product.transition(target)
+    return product
 
 
 def test_controlled_action_requires_explicit_valid_lease():
@@ -90,3 +111,36 @@ def test_simulation_cannot_use_controlled_admission_boundary():
     result = admit_controlled_action(_request(requested_mode=AesirGridMode.SIMULATION))
     assert result.decision is AegisDecision.DENY
     assert "CONTROLLED or LIVE" in result.reason
+
+
+def test_allow_admission_moves_staged_product_to_authorized():
+    product = _staged_product()
+    admission = admit_controlled_action(_request())
+
+    authorized = authorize_product(product, admission)
+
+    assert admission.decision is AegisDecision.ALLOW
+    assert authorized.lifecycle_state is ProductLifecycle.AUTHORIZED
+    assert authorized.authority == "product-definition-only"
+    assert authorized.can_execute is False
+
+
+def test_non_allow_admission_cannot_authorize_product():
+    product = _staged_product()
+    admission = admit_controlled_action(_request(lease=None))
+
+    assert admission.decision is AegisDecision.ESCALATE
+    with pytest.raises(ValueError, match="ALLOW admission"):
+        authorize_product(product, admission)
+
+
+def test_authorization_cannot_skip_staged_state():
+    product = build_product_definition(
+        product_id="aesirgrid-predictive-maintenance",
+        product_version="1.0.0",
+        domain="energy",
+    )
+    admission = admit_controlled_action(_request())
+
+    with pytest.raises(ValueError, match="STAGED"):
+        authorize_product(product, admission)
