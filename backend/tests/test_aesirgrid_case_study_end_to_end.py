@@ -21,8 +21,8 @@ def _build_staged_product():
     return product
 
 
-def _controlled_request(product, lease=None):
-    return ControlledActionRequest(tenant_id="tenant-grid-001", product_id=product.product_id, action="apply_maintenance_setpoint", requested_mode=AesirGridMode.CONTROLLED, now_s=150.0, lease=lease)
+def _controlled_request(product, lease=None, action="apply_maintenance_setpoint"):
+    return ControlledActionRequest(tenant_id="tenant-grid-001", product_id=product.product_id, action=action, requested_mode=AesirGridMode.CONTROLLED, now_s=150.0, lease=lease)
 
 
 def test_aesirgrid_intent_to_shadow_to_controlled_admission():
@@ -68,6 +68,6 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
 def test_unrelated_action_cannot_reuse_valid_controlled_lease():
     product = _build_staged_product()
     lease = AuthorityLease(lease_id="lease-aesirgrid-e2e-action-001", tenant_id="tenant-grid-001", product_id=product.product_id, action="apply_maintenance_setpoint", mode=AesirGridMode.CONTROLLED, issued_at_s=100.0, expires_at_s=200.0, status=AuthorityStatus.VALID)
-    result = admit_controlled_action(_controlled_request(product, lease)._replace(action="disable_protection")) if False else admit_controlled_action(ControlledActionRequest(tenant_id="tenant-grid-001", product_id=product.product_id, action="disable_protection", requested_mode=AesirGridMode.CONTROLLED, now_s=150.0, lease=lease))
+    result = admit_controlled_action(_controlled_request(product, lease, action="disable_protection"))
     assert result.decision is AegisDecision.DENY
     assert result.reason == "authority lease action mismatch"
