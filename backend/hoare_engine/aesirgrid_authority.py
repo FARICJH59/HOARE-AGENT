@@ -1,10 +1,6 @@
 """Explicit authority/lease boundary for the AesirGrid case study.
 
-Provenance: 2026-09-12
-
-This module admits a controlled action only when a valid, unexpired authority
-artifact is presented and AEGIS permits the requested mode. It does not issue
-physical commands or replace the existing executor.
+Provenance: 2026-09-15
 """
 
 from __future__ import annotations
@@ -27,6 +23,7 @@ class AuthorityLease:
     lease_id: str
     tenant_id: str
     product_id: str
+    action: str
     mode: AesirGridMode
     issued_at_s: float
     expires_at_s: float
@@ -56,72 +53,36 @@ class ControlledAdmission:
     lease_id: str | None = None
 
 
-def admit_controlled_action(
-    request: ControlledActionRequest,
-) -> ControlledAdmission:
-    """Admit a controlled action only across the explicit authority boundary."""
-
-    if request.requested_mode not in {
-        AesirGridMode.CONTROLLED,
-        AesirGridMode.LIVE,
-    }:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="controlled admission requires CONTROLLED or LIVE mode",
-        )
+def admit_controlled_action(request: ControlledActionRequest) -> ControlledAdmission:
+    """Admit only an explicitly leased, scoped controlled/live action."""
+    if request.requested_mode not in {AesirGridMode.CONTROLLED, AesirGridMode.LIVE}:
+        return ControlledAdmission(AegisDecision.DENY, "controlled admission requires CONTROLLED or LIVE mode")
 
     lease = request.lease
     if lease is None:
-        return ControlledAdmission(
-            decision=AegisDecision.ESCALATE,
-            reason="explicit authority lease required",
-        )
-
+        return ControlledAdmission(AegisDecision.ESCALATE, "explicit authority lease required")
     if lease.tenant_id != request.tenant_id:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease tenant mismatch",
-        )
-
+        return ControlledAdmission(AegisDecision.DENY, "authority lease tenant mismatch")
     if lease.product_id != request.product_id:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease product mismatch",
-        )
-
+        return ControlledAdmission(AegisDecision.DENY, "authority lease product mismatch")
+    if lease.action != request.action:
+        return ControlledAdmission(AegisDecision.DENY, "authority lease action mismatch", lease.lease_id)
     if lease.mode is not request.requested_mode:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease mode mismatch",
-        )
-
+        return ControlledAdmission(AegisDecision.DENY, "authority lease mode mismatch", lease.lease_id)
     if not lease.is_valid_at(request.now_s):
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease is expired or revoked",
-            lease_id=lease.lease_id,
-        )
-
+        return ControlledAdmission(AegisDecision.DENY, "authority lease is expired or revoked", lease.lease_id)
     if not request.action.strip():
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="controlled action is required",
-            lease_id=lease.lease_id,
-        )
+        return ControlledAdmission(AegisDecision.DENY, "controlled action is required", lease.lease_id)
 
     return ControlledAdmission(
-        decision=AegisDecision.ALLOW,
-        reason="explicit authority lease satisfies controlled admission boundary",
-        lease_id=lease.lease_id,
+        AegisDecision.ALLOW,
+        "explicit authority lease satisfies controlled admission boundary",
+        lease.lease_id,
     )
 
 
-def authorize_product(
-    product: ProductDefinition,
-    admission: ControlledAdmission,
-) -> ProductDefinition:
-    """Cross STAGED -> AUTHORIZED only after a successful admission decision."""
-
+def authorize_product(product: ProductDefinition, admission: ControlledAdmission) -> ProductDefinition:
+    """Cross STAGED -> AUTHORIZED only after successful admission."""
     if product.lifecycle_state is not ProductLifecycle.STAGED:
         raise ValueError("product must be STAGED before authorization")
     if admission.decision is not AegisDecision.ALLOW:
@@ -129,11 +90,4 @@ def authorize_product(
     return product.transition(ProductLifecycle.AUTHORIZED)
 
 
-__all__ = [
-    "AuthorityLease",
-    "AuthorityStatus",
-    "ControlledActionRequest",
-    "ControlledAdmission",
-    "admit_controlled_action",
-    "authorize_product",
-]
+__all__ = ["AuthorityLease", "AuthorityStatus", "ControlledActionRequest", "ControlledAdmission", "admit_controlled_action", "authorize_product"]
