@@ -1,6 +1,6 @@
 """Explicit authority/lease boundary for the AesirGrid case study.
 
-Provenance: 2026-09-12
+Provenance: 2026-09-16
 
 This module admits a controlled action only when a valid, unexpired authority
 artifact is presented and AEGIS permits the requested mode. It does not issue
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Callable, TypeVar
 
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
 from hoare_engine.product_factory import ProductDefinition, ProductLifecycle
@@ -54,6 +55,9 @@ class ControlledAdmission:
     decision: AegisDecision
     reason: str
     lease_id: str | None = None
+
+
+T = TypeVar("T")
 
 
 def admit_controlled_action(
@@ -129,6 +133,25 @@ def authorize_product(
     return product.transition(ProductLifecycle.AUTHORIZED)
 
 
+def execute_authorized_action(
+    request: ControlledActionRequest,
+    executor: Callable[[ControlledActionRequest], T],
+) -> T:
+    """Delegate to the existing executor only after local admission succeeds.
+
+    The executor is injected rather than implemented here. This preserves the
+    existing execution subsystem while making the admission boundary explicit
+    and testable: no executor call occurs for DENY or ESCALATE.
+    """
+
+    admission = admit_controlled_action(request)
+    if admission.decision is not AegisDecision.ALLOW:
+        raise PermissionError(
+            f"execution not admitted: {admission.decision.value}: {admission.reason}"
+        )
+    return executor(request)
+
+
 __all__ = [
     "AuthorityLease",
     "AuthorityStatus",
@@ -136,4 +159,5 @@ __all__ = [
     "ControlledAdmission",
     "admit_controlled_action",
     "authorize_product",
+    "execute_authorized_action",
 ]
