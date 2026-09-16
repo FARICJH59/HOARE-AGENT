@@ -1,6 +1,6 @@
 """Tests for the explicit AesirGrid controlled/live authority boundary.
 
-Provenance: 2026-09-14
+Provenance: 2026-09-16
 """
 
 import pytest
