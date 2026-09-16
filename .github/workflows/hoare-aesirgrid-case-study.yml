@@ -7,6 +7,7 @@ on:
       - 'backend/tests/test_case_study_aesirgrid.py'
       - 'backend/tests/test_aesirgrid_simulation.py'
       - 'backend/tests/test_aesirgrid_authority.py'
+      - 'backend/tests/test_governed_execution.py'
       - 'backend/tests/test_aesirgrid_end_to_end_authorized_control.py'
       - 'docs/CASE-STUDY-001-AESIRGRID.md'
       - '.github/workflows/hoare-aesirgrid-case-study.yml'
@@ -41,5 +42,6 @@ jobs:
             tests/test_case_study_aesirgrid.py \
             tests/test_aesirgrid_simulation.py \
             tests/test_aesirgrid_authority.py \
+            tests/test_governed_execution.py \
             tests/test_aesirgrid_end_to_end_authorized_control.py \
             -v
