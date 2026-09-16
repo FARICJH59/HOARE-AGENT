@@ -1,0 +1,58 @@
+name: HOARE AesirGrid Case Study Regression
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/hoare_engine/**'
+      - 'backend/tests/test_case_study_aesirgrid.py'
+      - 'backend/tests/test_aesirgrid_simulation.py'
+      - 'backend/tests/test_aesirgrid_authority.py'
+      - 'backend/tests/test_aesirgrid_case_study_end_to_end.py'
+      - 'backend/tests/test_governed_execution.py'
+      - 'backend/tests/test_aesirgrid_control_plane_case.py'
+      - 'backend/tests/test_aesirgrid_control_boundary.py'
+      - 'backend/tests/test_aesirgrid_authority_integration.py'
+      - 'backend/tests/test_aesirgrid_authorized_lifecycle.py'
+      - 'backend/tests/test_aesirgrid_product_authorization.py'
+      - 'backend/tests/test_aesirgrid_control_plane_case.py'
+      - 'conftest.py'
+      - 'backend/requirements.txt'
+      - '.github/workflows/hoare-aesirgrid-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  case-study:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run focused AesirGrid regression suite
+        run: |
+          pytest \
+            tests/test_case_study_aesirgrid.py \
+            tests/test_aesirgrid_simulation.py \
+            tests/test_aesirgrid_authority.py \
+            tests/test_aesirgrid_case_study_end_to_end.py \
+            tests/test_governed_execution.py \
+            tests/test_aesirgrid_control_boundary.py \
+            tests/test_aesirgrid_authority_integration.py \
+            tests/test_aesirgrid_authorized_lifecycle.py \
+            tests/test_aesirgrid_product_authorization.py \
+            -v
