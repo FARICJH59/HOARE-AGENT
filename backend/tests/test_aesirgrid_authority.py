@@ -11,6 +11,7 @@ from hoare_engine.aesirgrid_authority import (
     ControlledActionRequest,
     admit_controlled_action,
     authorize_product,
+    execute_authorized_action,
 )
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
 from hoare_engine.product_factory import ProductLifecycle, build_product_definition
@@ -144,3 +145,42 @@ def test_authorization_cannot_skip_staged_state():
 
     with pytest.raises(ValueError, match="STAGED"):
         authorize_product(product, admission)
+
+
+def test_valid_admission_delegates_to_injected_existing_executor():
+    calls = []
+
+    def existing_executor(request):
+        calls.append(request.action)
+        return "executor-result"
+
+    result = execute_authorized_action(_request(), existing_executor)
+
+    assert result == "executor-result"
+    assert calls == ["apply_maintenance_setpoint"]
+
+
+def test_missing_lease_never_calls_injected_executor():
+    calls = []
+
+    def existing_executor(request):
+        calls.append(request.action)
+        return "must-not-run"
+
+    with pytest.raises(PermissionError, match="ESCALATE"):
+        execute_authorized_action(_request(lease=None), existing_executor)
+
+    assert calls == []
+
+
+def test_expired_lease_never_calls_injected_executor():
+    calls = []
+
+    def existing_executor(request):
+        calls.append(request.action)
+        return "must-not-run"
+
+    with pytest.raises(PermissionError, match="DENY"):
+        execute_authorized_action(_request(now_s=200.0), existing_executor)
+
+    assert calls == []
