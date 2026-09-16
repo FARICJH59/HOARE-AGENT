@@ -7,6 +7,7 @@ from hoare_engine.aesirgrid_authority import (
     AuthorityLease,
     AuthorityStatus,
     ControlledActionRequest,
+    admit_controlled_action,
     authorize_product,
 )
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
@@ -85,7 +86,7 @@ def test_denied_execution_still_produces_nonsecret_evidence():
 def test_authorized_execution_binds_lease_and_execution_facts_into_evidence():
     staged = _staged_product()
     lease = _lease(staged)
-    admission = __import__("hoare_engine.aesirgrid_authority", fromlist=["admit_controlled_action"]).admit_controlled_action(_request(staged, lease))
+    admission = admit_controlled_action(_request(staged, lease))
     authorized = authorize_product(staged, admission)
     calls = []
 
@@ -112,7 +113,7 @@ def test_authorized_execution_binds_lease_and_execution_facts_into_evidence():
 def test_evidence_changes_when_execution_result_changes():
     product = _staged_product()
     lease = _lease(product)
-    admission = __import__("hoare_engine.aesirgrid_authority", fromlist=["admit_controlled_action"]).admit_controlled_action(_request(product, lease))
+    admission = admit_controlled_action(_request(product, lease))
     authorized = authorize_product(product, admission)
 
     first = execute_governed_with_evidence(
