@@ -1,6 +1,6 @@
 """Tests for the explicit AesirGrid controlled/live authority boundary.
 
-Provenance: 2026-09-14
+Provenance: 2026-09-16
 """
 
 from hoare_engine.aesirgrid_authority import (
@@ -17,6 +17,7 @@ def _lease(**overrides):
         lease_id="lease-aesirgrid-001",
         tenant_id="tenant-grid-001",
         product_id="aesirgrid-predictive-maintenance",
+        action="apply_maintenance_setpoint",
         mode=AesirGridMode.CONTROLLED,
         issued_at_s=100.0,
         expires_at_s=200.0,
@@ -51,6 +52,12 @@ def test_valid_controlled_lease_allows_admission():
     assert result.lease_id == "lease-aesirgrid-001"
 
 
+def test_unrelated_action_is_denied_even_with_valid_lease():
+    result = admit_controlled_action(_request(action="disable_protection"))
+    assert result.decision is AegisDecision.DENY
+    assert "action mismatch" in result.reason
+
+
 def test_expired_lease_is_denied():
     result = admit_controlled_action(_request(now_s=200.0))
     assert result.decision is AegisDecision.DENY
@@ -58,7 +65,9 @@ def test_expired_lease_is_denied():
 
 
 def test_revoked_lease_is_denied():
-    result = admit_controlled_action(_request(lease=_lease(status=AuthorityStatus.REVOKED)))
+    result = admit_controlled_action(
+        _request(lease=_lease(status=AuthorityStatus.REVOKED))
+    )
     assert result.decision is AegisDecision.DENY
     assert "expired or revoked" in result.reason
 
@@ -87,6 +96,14 @@ def test_mode_mismatch_is_denied():
 
 
 def test_simulation_cannot_use_controlled_admission_boundary():
-    result = admit_controlled_action(_request(requested_mode=AesirGridMode.SIMULATION))
+    result = admit_controlled_action(
+        _request(requested_mode=AesirGridMode.SIMULATION)
+    )
     assert result.decision is AegisDecision.DENY
     assert "CONTROLLED or LIVE" in result.reason
+
+
+def test_malformed_lease_action_fails_closed():
+    result = admit_controlled_action(_request(lease=_lease(action=None)))
+    assert result.decision is AegisDecision.DENY
+    assert "lease action is required" in result.reason
