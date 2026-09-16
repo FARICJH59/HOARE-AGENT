@@ -56,6 +56,10 @@ class ControlledAdmission:
     decision: AegisDecision
     reason: str
     lease_id: str | None = None
+    tenant_id: str | None = None
+    product_id: str | None = None
+    action: str | None = None
+    mode: AesirGridMode | None = None
 
 
 def admit_controlled_action(
@@ -83,12 +87,14 @@ def admit_controlled_action(
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="authority lease tenant mismatch",
+            lease_id=lease.lease_id,
         )
 
     if lease.product_id != request.product_id:
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="authority lease product mismatch",
+            lease_id=lease.lease_id,
         )
 
     if not isinstance(request.action, str) or not request.action.strip():
@@ -130,6 +136,10 @@ def admit_controlled_action(
         decision=AegisDecision.ALLOW,
         reason="explicit authority lease satisfies controlled admission boundary",
         lease_id=lease.lease_id,
+        tenant_id=request.tenant_id,
+        product_id=request.product_id,
+        action=request.action,
+        mode=request.requested_mode,
     )
 
 
@@ -137,12 +147,14 @@ def authorize_product(
     product: ProductDefinition,
     admission: ControlledAdmission,
 ) -> ProductDefinition:
-    """Cross STAGED -> AUTHORIZED only after a successful admission decision."""
+    """Cross STAGED -> AUTHORIZED only after a matching ALLOW admission."""
 
     if product.lifecycle_state is not ProductLifecycle.STAGED:
         raise ValueError("product must be STAGED before authorization")
     if admission.decision is not AegisDecision.ALLOW:
         raise ValueError("product authorization requires an ALLOW admission")
+    if admission.product_id != product.product_id:
+        raise ValueError("admission product does not match product definition")
     return product.transition(ProductLifecycle.AUTHORIZED)
 
 
