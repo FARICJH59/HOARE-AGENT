@@ -74,6 +74,12 @@ def admit_controlled_action(
             reason="controlled admission requires CONTROLLED or LIVE mode",
         )
 
+    if not request.action.strip():
+        return ControlledAdmission(
+            decision=AegisDecision.DENY,
+            reason="controlled action is required",
+        )
+
     lease = request.lease
     if lease is None:
         return ControlledAdmission(
@@ -103,13 +109,6 @@ def admit_controlled_action(
         return ControlledAdmission(
             decision=AegisDecision.DENY,
             reason="authority lease is expired or revoked",
-            lease_id=lease.lease_id,
-        )
-
-    if not request.action.strip():
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="controlled action is required",
             lease_id=lease.lease_id,
         )
 
