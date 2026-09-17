@@ -1,6 +1,6 @@
 """End-to-end control-plane validation for HOARE Case Study #1.
 
-Provenance: 2026-09-14
+Provenance: 2026-09-16
 
 This test deliberately stops at the executor seam. It proves that the
 enterprise product can reach controlled admission and that the existing
@@ -73,6 +73,23 @@ def _controlled_request(product, lease=None):
     )
 
 
+def _valid_lease(product):
+    return AuthorityLease(
+        lease_id="lease-aesirgrid-e2e-001",
+        tenant_id="tenant-grid-001",
+        product_id=product.product_id,
+        action="apply_maintenance_setpoint",
+        mode=AesirGridMode.CONTROLLED,
+        issued_at_s=100.0,
+        expires_at_s=200.0,
+        status=AuthorityStatus.VALID,
+        authority_source="human-operator-approval",
+        evidence_refs=("telemetry-integrity", "model-verification"),
+        scope=("apply_maintenance_setpoint",),
+        audit_correlation_id="audit-aesirgrid-e2e-001",
+    )
+
+
 def test_aesirgrid_intent_to_shadow_to_controlled_admission():
     product = _build_staged_product()
 
@@ -94,17 +111,8 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
     assert shadow.mode is AesirGridMode.SHADOW
 
     calls = []
-    lease = AuthorityLease(
-        lease_id="lease-aesirgrid-e2e-001",
-        tenant_id="tenant-grid-001",
-        product_id=product.product_id,
-        mode=AesirGridMode.CONTROLLED,
-        issued_at_s=100.0,
-        expires_at_s=200.0,
-        status=AuthorityStatus.VALID,
-    )
+    lease = _valid_lease(product)
 
-    # No authority: AEGIS escalates and the existing executor is untouched.
     escalated = execute_governed(
         _controlled_request(product),
         lambda: calls.append("executed") or "should-not-run",
@@ -115,10 +123,10 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
     assert escalated.executed is False
     assert calls == []
 
-    # A valid lease satisfies AEGIS admission, but STAGED still cannot invoke
-    # the executor until the product crosses the explicit AUTHORIZED boundary.
     admission = admit_controlled_action(_controlled_request(product, lease))
     assert admission.decision is AegisDecision.ALLOW
+    assert admission.evidence_refs == ("telemetry-integrity", "model-verification")
+    assert admission.audit_correlation_id == "audit-aesirgrid-e2e-001"
 
     staged_execution = execute_governed(
         _controlled_request(product, lease),
@@ -134,7 +142,6 @@ def test_aesirgrid_intent_to_shadow_to_controlled_admission():
     assert authorized_product.lifecycle_state is ProductLifecycle.AUTHORIZED
     assert authorized_product.can_execute is False
 
-    # Only now may the existing executor seam be invoked.
     executed = execute_governed(
         _controlled_request(authorized_product, lease),
         lambda: calls.append("executed") or "executor-result",
