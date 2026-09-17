@@ -65,9 +65,11 @@ The case study verifies that:
 3. Controlled action requires an explicit authority lease.
 4. Tenant identity remains bound to the lease.
 5. Product identity remains bound to the lease.
-6. Action scope is explicit.
+6. Action identity and scope remain explicit.
 7. Expired authority is denied.
 8. Authorization moves a staged product only after an `ALLOW` admission.
+9. Unsafe physical conditions are denied before actuation.
+10. Simulation and shadow remain non-actuating.
 
 ## IP boundary
 
@@ -80,22 +82,21 @@ Vertical and customer IP remain separate:
 
 Case Study #1 used an energy-grid problem. Case Study #2 uses industrial robotics but reuses the same platform-level contracts.
 
-That provides a direct architectural comparison:
+```text
+AesirGrid                    Robotics
+    │                            │
+    └────────── HOARE ───────────┘
+                 │
+        same factory contract
+        same lifecycle boundary
+        same authority principle
+```
 
-| Concern | AesirGrid | Robotics |
-|---|---|---|
-| Product factory | Same | Same |
-| Lifecycle | Same | Same |
-| Authority model | Same | Same |
-| Tenant boundary | Same | Same |
-| Evidence boundary | Same pattern | Same pattern |
-| AEGIS admission | Same | Same |
-| Domain capabilities | Grid/energy | Robotics |
-| Domain policy | Energy safety | Robotics safety |
-| Vertical IP | Grid models | Inspection models |
-| Customer IP | Grid telemetry | Factory telemetry |
+Domain specialization occurs in capabilities, policies, workflows, integrations, compliance evidence, and IP while the core governance contract remains reusable.
 
-The important result is not that the two products are identical. It is that **domain specialization occurs in capabilities, policies, workflows, integrations, and IP while the core governance contract remains reusable**.
+## Boundary
+
+This case study does not authorize autonomous physical robot motion by itself. Any production robotics deployment requires its own safety validation, evidence, authority, and operational controls.
 
 ## Test entry point
 
@@ -103,13 +104,9 @@ The important result is not that the two products are identical. It is that **do
 backend/tests/test_case_study_robotics.py
 ```
 
-Run the focused test locally:
+Run locally:
 
 ```bash
 cd backend
 pytest tests/test_case_study_robotics.py -v
 ```
-
-## Boundary
-
-This case study does not authorize autonomous physical robot motion by itself. The injected/existing executor boundary remains downstream of admission. Any production robotics deployment requires its own safety validation, evidence, authority, and operational controls.
