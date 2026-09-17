@@ -4,7 +4,7 @@ Provenance: 2026-09-16
 
 This test joins the existing product-factory and authority contracts. It does
 not execute a physical command; it proves that the authorization boundary is
-reached only by an exactly scoped, valid lease.
+reached only by an exactly scoped, valid, evidence-carrying lease.
 """
 
 import pytest
@@ -18,7 +18,6 @@ from hoare_engine.aesirgrid_authority import (
 )
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
 from hoare_engine.product_factory import ProductLifecycle, build_product_definition
-
 
 PRODUCT_ID = "aesirgrid-predictive-maintenance"
 TENANT_ID = "tenant-grid-001"
@@ -58,11 +57,15 @@ def _valid_lease(**overrides):
         lease_id="lease-aesirgrid-controlled-001",
         tenant_id=TENANT_ID,
         product_id=PRODUCT_ID,
-        action=ACTION,
         mode=AesirGridMode.CONTROLLED,
         issued_at_s=100.0,
         expires_at_s=200.0,
         status=AuthorityStatus.VALID,
+        action=ACTION,
+        authority_source="human-operator-approval",
+        evidence_refs=("telemetry-integrity", "model-verification"),
+        scope=(ACTION,),
+        audit_correlation_id="audit-aesirgrid-001",
     )
     values.update(overrides)
     return AuthorityLease(**values)
@@ -86,6 +89,9 @@ def test_aesirgrid_controlled_case_study_reaches_authorized_boundary():
     admission = admit_controlled_action(_request())
 
     assert admission.decision is AegisDecision.ALLOW
+    assert admission.evidence_refs == ("telemetry-integrity", "model-verification")
+    assert admission.audit_correlation_id == "audit-aesirgrid-001"
+
     authorized = authorize_product(product, admission)
     assert authorized.lifecycle_state is ProductLifecycle.AUTHORIZED
     assert authorized.authority == "product-definition-only"
@@ -101,7 +107,16 @@ def test_aesirgrid_lease_is_exactly_bound_to_action():
     assert result.reason == "authority lease action mismatch"
 
 
-def test_aesirgrid_live_request_requires_a_live_scoped_lease():
+def test_aesirgrid_action_outside_scope_is_denied():
+    result = admit_controlled_action(
+        _request(lease=_valid_lease(scope=("other_action",)))
+    )
+
+    assert result.decision is AegisDecision.DENY
+    assert result.reason == "authority action outside lease scope"
+
+
+def test_aesirgrid_live_request_requires_live_scoped_lease():
     result = admit_controlled_action(
         _request(
             requested_mode=AesirGridMode.LIVE,
@@ -135,3 +150,10 @@ def test_aesirgrid_expired_lease_cannot_authorize_product():
     assert admission.reason == "authority lease is expired or revoked"
     with pytest.raises(ValueError, match="ALLOW admission"):
         authorize_product(_staged_product(), admission)
+
+
+def test_aesirgrid_missing_evidence_cannot_authorize_product():
+    admission = admit_controlled_action(_request(lease=_valid_lease(evidence_refs=())))
+
+    assert admission.decision is AegisDecision.DENY
+    assert admission.reason == "authority evidence is required"
