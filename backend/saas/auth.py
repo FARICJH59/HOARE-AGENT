@@ -17,7 +17,9 @@ class ApiKeyAuthenticator:
     """API-key authenticator for gateway-style tenant isolation."""
 
     def __init__(self) -> None:
-        self.require_auth = os.getenv("HOARE_REQUIRE_AUTH", "0") == "1"
+        # Fail closed by default. Development/test environments may explicitly
+        # opt out with HOARE_REQUIRE_AUTH=0.
+        self.require_auth = os.getenv("HOARE_REQUIRE_AUTH", "1") == "1"
         self._keys = self._load_keys()
 
     @staticmethod
@@ -52,4 +54,3 @@ class ApiKeyAuthenticator:
         if not api_key or api_key not in self._keys:
             raise PermissionError("Invalid or missing API key")
         return self._keys[api_key]
-
