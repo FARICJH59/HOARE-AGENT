@@ -5,38 +5,20 @@ Provenance: 2026-09-16
 
 import pytest
 
-from hoare_engine.aesirgrid_authority import (
-    AuthorityLease,
-    AuthorityStatus,
-    ControlledActionRequest,
-    admit_controlled_action,
-    authorize_product,
-)
+from hoare_engine.aesirgrid_authority import AuthorityLease, AuthorityStatus, ControlledActionRequest, admit_controlled_action, authorize_product
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
 from hoare_engine.product_factory import ProductLifecycle, build_product_definition
-from hoare_engine.robotics_case_study import (
-    RoboticsDecision,
-    RoboticsMode,
-    RobotTelemetry,
-    assess_robot,
-    govern_robotics_action,
-)
+from hoare_engine.robotics_case_study import RoboticsDecision, RoboticsMode, RobotTelemetry, assess_robot, govern_robotics_action
 
 
 def _robot_product():
     product = build_product_definition(
-        product_id="industrial-robot-inspection",
-        product_version="1.0.0",
-        domain="robotics",
+        product_id="industrial-robot-inspection", product_version="1.0.0", domain="robotics",
         capabilities=("MachineVision", "RobotStateMonitoring", "AnomalyDetection", "PredictiveMaintenance"),
-        domain_policies=("robotics.safety.v1",),
-        workflows=("robot-telemetry", "inspection-assessment"),
-        integrations=("robot-controller-adapter",),
-        deployment_profiles=("simulation", "shadow", "controlled", "live"),
-        compliance_profiles=("industrial-safety",),
-        evidence_requirements=("sensor-integrity", "model-verification", "safety-authorization"),
-        vertical_ip_refs=("robotics:inspection-models:v1",),
-        customer_ip_refs=("customer:factory:robot-telemetry:v1",),
+        domain_policies=("robotics.safety.v1",), workflows=("robot-telemetry", "inspection-assessment"),
+        integrations=("robot-controller-adapter",), deployment_profiles=("simulation", "shadow", "controlled", "live"),
+        compliance_profiles=("industrial-safety",), evidence_requirements=("sensor-integrity", "model-verification", "safety-authorization"),
+        vertical_ip_refs=("robotics:inspection-models:v1",), customer_ip_refs=("customer:factory:robot-telemetry:v1",),
         metadata={"case_study": "HOARE-CS-002"},
     )
     for target in (ProductLifecycle.PLANNED, ProductLifecycle.BUILDING, ProductLifecycle.TESTING, ProductLifecycle.VERIFIED, ProductLifecycle.STAGED):
@@ -54,17 +36,10 @@ def _maintenance_signal():
 
 def _lease(product):
     return AuthorityLease(
-        lease_id="lease-robotics-001",
-        tenant_id="tenant-factory-001",
-        product_id=product.product_id,
-        action="start_inspection_cycle",
-        mode=AesirGridMode.CONTROLLED,
-        issued_at_s=100.0,
-        expires_at_s=200.0,
-        status=AuthorityStatus.VALID,
-        authority_source="factory-operator-approval",
-        evidence_refs=("sensor-integrity", "model-verification"),
-        scope=("start_inspection_cycle",),
+        lease_id="lease-robotics-001", tenant_id="tenant-factory-001", product_id=product.product_id,
+        action="start_inspection_cycle", mode=AesirGridMode.CONTROLLED, issued_at_s=100.0, expires_at_s=200.0,
+        status=AuthorityStatus.VALID, authority_source="factory-operator-approval",
+        evidence_refs=("sensor-integrity", "model-verification"), scope=("start_inspection_cycle",),
         audit_correlation_id="audit-robotics-001",
     )
 
@@ -119,14 +94,7 @@ def test_invalid_robot_telemetry_fails_closed():
 
 def test_robotics_authority_is_bound_to_exact_product_and_action():
     product = _robot_product()
-    request = ControlledActionRequest(
-        tenant_id="tenant-factory-001",
-        product_id=product.product_id,
-        action="start_inspection_cycle",
-        requested_mode=AesirGridMode.CONTROLLED,
-        now_s=150.0,
-        lease=_lease(product),
-    )
+    request = ControlledActionRequest(tenant_id="tenant-factory-001", product_id=product.product_id, action="start_inspection_cycle", requested_mode=AesirGridMode.CONTROLLED, now_s=150.0, lease=_lease(product))
     admission = admit_controlled_action(request)
     assert admission.decision is AegisDecision.ALLOW
     authorized = authorize_product(product, admission)
@@ -135,14 +103,7 @@ def test_robotics_authority_is_bound_to_exact_product_and_action():
 
 def test_robotics_wrong_tenant_is_denied_before_authorization():
     product = _robot_product()
-    request = ControlledActionRequest(
-        tenant_id="attacker-tenant",
-        product_id=product.product_id,
-        action="start_inspection_cycle",
-        requested_mode=AesirGridMode.CONTROLLED,
-        now_s=150.0,
-        lease=_lease(product),
-    )
+    request = ControlledActionRequest(tenant_id="attacker-tenant", product_id=product.product_id, action="start_inspection_cycle", requested_mode=AesirGridMode.CONTROLLED, now_s=150.0, lease=_lease(product))
     admission = admit_controlled_action(request)
     assert admission.decision is AegisDecision.DENY
     with pytest.raises(ValueError, match="ALLOW admission"):
