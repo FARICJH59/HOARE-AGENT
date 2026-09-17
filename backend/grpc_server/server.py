@@ -53,6 +53,7 @@ from hoare_engine.pda_engine import registry
 from hoare_engine.verifier   import verifier
 from saas.audit import AuditLogger
 from saas.auth import ApiKeyAuthenticator, AuthContext
+from saas.authorization import require_tenant_access
 from saas.billing import BillingService
 from saas.usage import UsageMeter
 from integrations import connector_registry
@@ -250,12 +251,16 @@ async def _start_http_server() -> None:
         body = await req.json()
         tenant_id = body["tenant_id"]
         schemas = body.get("schemas")
+        auth_ctx: AuthContext = req["auth_ctx"]
+        require_tenant_access(auth_ctx, tenant_id)
         allowed = registry.provision_tenant(tenant_id, schemas=schemas)
         return web.json_response({"tenant_id": tenant_id, "schemas": allowed})
 
     @routes.get("/tenants/{tenant_id}/schemas")
     async def tenant_schemas(req: web.Request) -> web.Response:
         tenant_id = req.match_info["tenant_id"]
+        auth_ctx: AuthContext = req["auth_ctx"]
+        require_tenant_access(auth_ctx, tenant_id)
         return web.json_response({"tenant_id": tenant_id, "schemas": registry.list_schemas(tenant_id)})
 
     @routes.get("/usage/me")
