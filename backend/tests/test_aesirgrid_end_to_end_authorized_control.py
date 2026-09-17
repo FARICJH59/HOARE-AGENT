@@ -9,6 +9,7 @@ recording fake executor so no physical or provider operation occurs.
 
 from hoare_engine.aesirgrid_authority import (
     AuthorityLease,
+    AuthorityStatus,
     ControlledActionRequest,
     admit_controlled_action,
     authorize_product,
@@ -63,21 +64,27 @@ def _staged_product():
     return product
 
 
-def _lease():
+def _lease(product):
     return AuthorityLease(
         lease_id="lease-aesirgrid-e2e-001",
         tenant_id=TENANT_ID,
-        product_id=PRODUCT_ID,
+        product_id=product.product_id,
+        action="apply_maintenance_setpoint",
         mode=AesirGridMode.CONTROLLED,
         issued_at_s=100.0,
         expires_at_s=200.0,
+        status=AuthorityStatus.VALID,
+        authority_source="human-operator-approval",
+        evidence_refs=("telemetry-integrity", "model-verification"),
+        scope=("apply_maintenance_setpoint",),
+        audit_correlation_id="audit-aesirgrid-e2e-001",
     )
 
 
-def _request(lease=None):
+def _request(product, lease=None):
     return ControlledActionRequest(
         tenant_id=TENANT_ID,
-        product_id=PRODUCT_ID,
+        product_id=product.product_id,
         action="apply_maintenance_setpoint",
         requested_mode=AesirGridMode.CONTROLLED,
         now_s=150.0,
@@ -109,7 +116,7 @@ def test_complete_case_study_reaches_authorized_existing_executor():
 
     calls = []
     denied = execute_governed(
-        _request(None),
+        _request(product),
         lambda: calls.append("physical-operation"),
         product=product,
     )
@@ -117,10 +124,12 @@ def test_complete_case_study_reaches_authorized_existing_executor():
     assert denied.executed is False
     assert calls == []
 
-    request = _request(_lease())
+    request = _request(product, _lease(product))
     admission = admit_controlled_action(request)
     assert admission.decision is AegisDecision.ALLOW
     assert admission.lease_id == "lease-aesirgrid-e2e-001"
+    assert admission.evidence_refs == ("telemetry-integrity", "model-verification")
+    assert admission.audit_correlation_id == "audit-aesirgrid-e2e-001"
 
     authorized = authorize_product(product, admission)
     assert authorized.lifecycle_state is ProductLifecycle.AUTHORIZED
@@ -143,7 +152,7 @@ def test_staged_product_cannot_execute_even_with_valid_lease():
     calls = []
 
     result = execute_governed(
-        _request(_lease()),
+        _request(product, _lease(product)),
         lambda: calls.append("executed"),
         product=product,
     )
@@ -155,8 +164,9 @@ def test_staged_product_cannot_execute_even_with_valid_lease():
 
 
 def test_case_study_rejects_tenant_mismatch_before_executor():
+    product = _staged_product()
     calls = []
-    base = _request(_lease())
+    base = _request(product, _lease(product))
     request = ControlledActionRequest(
         tenant_id="different-tenant",
         product_id=base.product_id,
