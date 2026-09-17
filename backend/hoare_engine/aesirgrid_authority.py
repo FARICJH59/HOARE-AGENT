@@ -3,8 +3,10 @@
 Provenance: 2026-09-16
 
 This module admits a controlled action only when a valid, unexpired authority
-artifact is presented and AEGIS permits the requested mode. It does not issue
-physical commands or replace the existing executor.
+artifact is presented and AEGIS permits the requested mode. The lease is
+bound to the exact action it authorizes and carries auditable evidence
+references. It does not issue physical commands or replace the existing
+executor.
 """
 
 from __future__ import annotations
@@ -32,6 +34,11 @@ class AuthorityLease:
     issued_at_s: float
     expires_at_s: float
     status: AuthorityStatus = AuthorityStatus.VALID
+    action: str = ""
+    authority_source: str = ""
+    evidence_refs: tuple[str, ...] = ()
+    scope: tuple[str, ...] = ()
+    audit_correlation_id: str = ""
 
     def is_valid_at(self, now_s: float) -> bool:
         return (
@@ -55,15 +62,27 @@ class ControlledAdmission:
     decision: AegisDecision
     reason: str
     lease_id: str | None = None
+    evidence_refs: tuple[str, ...] = ()
+    audit_correlation_id: str | None = None
 
 
 T = TypeVar("T")
 
 
+def _denied(lease: AuthorityLease, reason: str) -> ControlledAdmission:
+    return ControlledAdmission(
+        decision=AegisDecision.DENY,
+        reason=reason,
+        lease_id=lease.lease_id,
+        evidence_refs=lease.evidence_refs,
+        audit_correlation_id=lease.audit_correlation_id or None,
+    )
+
+
 def admit_controlled_action(
     request: ControlledActionRequest,
 ) -> ControlledAdmission:
-    """Admit a controlled action only across the explicit authority boundary."""
+    """Admit only an explicitly leased, exactly scoped controlled/live action."""
 
     if request.requested_mode not in {
         AesirGridMode.CONTROLLED,
@@ -74,12 +93,6 @@ def admit_controlled_action(
             reason="controlled admission requires CONTROLLED or LIVE mode",
         )
 
-    if not request.action.strip():
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="controlled action is required",
-        )
-
     lease = request.lease
     if lease is None:
         return ControlledAdmission(
@@ -88,34 +101,36 @@ def admit_controlled_action(
         )
 
     if lease.tenant_id != request.tenant_id:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease tenant mismatch",
-        )
-
+        return _denied(lease, "authority lease tenant mismatch")
     if lease.product_id != request.product_id:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease product mismatch",
-        )
-
+        return _denied(lease, "authority lease product mismatch")
+    if not request.action.strip():
+        return _denied(lease, "controlled action is required")
+    if not lease.action.strip():
+        return _denied(lease, "authority lease action is required")
+    if lease.action != request.action:
+        return _denied(lease, "authority lease action mismatch")
     if lease.mode is not request.requested_mode:
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease mode mismatch",
-        )
-
+        return _denied(lease, "authority lease mode mismatch")
     if not lease.is_valid_at(request.now_s):
-        return ControlledAdmission(
-            decision=AegisDecision.DENY,
-            reason="authority lease is expired or revoked",
-            lease_id=lease.lease_id,
-        )
+        return _denied(lease, "authority lease is expired or revoked")
+    if not lease.authority_source.strip():
+        return _denied(lease, "authority source is required")
+    if not lease.evidence_refs:
+        return _denied(lease, "authority evidence is required")
+    if not lease.scope:
+        return _denied(lease, "authority scope is required")
+    if request.action not in lease.scope:
+        return _denied(lease, "authority action outside lease scope")
+    if not lease.audit_correlation_id.strip():
+        return _denied(lease, "audit correlation id is required")
 
     return ControlledAdmission(
         decision=AegisDecision.ALLOW,
         reason="explicit authority lease satisfies controlled admission boundary",
         lease_id=lease.lease_id,
+        evidence_refs=lease.evidence_refs,
+        audit_correlation_id=lease.audit_correlation_id,
     )
 
 
@@ -136,12 +151,7 @@ def execute_authorized_action(
     request: ControlledActionRequest,
     executor: Callable[[ControlledActionRequest], T],
 ) -> T:
-    """Delegate to the existing executor only after local admission succeeds.
-
-    The executor is injected rather than implemented here. This preserves the
-    existing execution subsystem while making the admission boundary explicit
-    and testable: no executor call occurs for DENY or ESCALATE.
-    """
+    """Delegate to the existing executor only after local admission succeeds."""
 
     admission = admit_controlled_action(request)
     if admission.decision is not AegisDecision.ALLOW:
