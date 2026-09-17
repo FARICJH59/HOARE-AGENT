@@ -1,6 +1,6 @@
 """Formal HOARE Case Study #1: AesirGrid predictive maintenance.
 
-Provenance: 2026-09-12
+Provenance: 2026-09-16
 """
 
 import pytest
@@ -11,6 +11,7 @@ from hoare_engine.aesirgrid_authority import (
     ControlledActionRequest,
     admit_controlled_action,
     authorize_product,
+    execute_authorized_action,
 )
 from hoare_engine.aesirgrid_case_study import AegisDecision, AesirGridMode
 from hoare_engine.product_factory import ProductLifecycle, build_product_definition
@@ -72,10 +73,15 @@ def _valid_lease(product):
         lease_id="lease-aesirgrid-001",
         tenant_id="tenant-grid-001",
         product_id=product.product_id,
+        action="apply_maintenance_setpoint",
         mode=AesirGridMode.CONTROLLED,
         issued_at_s=100.0,
         expires_at_s=200.0,
         status=AuthorityStatus.VALID,
+        authority_source="human-operator-approval",
+        evidence_refs=("telemetry-integrity", "model-verification"),
+        scope=("apply_maintenance_setpoint",),
+        audit_correlation_id="audit-aesirgrid-001",
     )
 
 
@@ -139,3 +145,34 @@ def test_aesirgrid_case_study_denies_authorization_without_valid_lease():
     assert admission.decision is AegisDecision.ESCALATE
     with pytest.raises(ValueError, match="ALLOW admission"):
         authorize_product(product, admission)
+
+
+def test_aesirgrid_case_study_delegates_only_after_admission():
+    _, product = _aesirgrid_case_study()
+    calls = []
+
+    def existing_executor(request):
+        calls.append(request.action)
+        return "controlled-execution-result"
+
+    result = execute_authorized_action(
+        _controlled_request(product, _valid_lease(product)),
+        existing_executor,
+    )
+
+    assert result == "controlled-execution-result"
+    assert calls == ["apply_maintenance_setpoint"]
+
+
+def test_aesirgrid_case_study_escalation_never_reaches_executor():
+    _, product = _aesirgrid_case_study()
+    calls = []
+
+    def existing_executor(request):
+        calls.append(request.action)
+        return "must-not-run"
+
+    with pytest.raises(PermissionError, match="ESCALATE"):
+        execute_authorized_action(_controlled_request(product), existing_executor)
+
+    assert calls == []
