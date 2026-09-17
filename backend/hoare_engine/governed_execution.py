@@ -31,14 +31,10 @@ T = TypeVar("T")
 
 
 class _AesirGridAdmissionAuthority:
-    """Adapt the existing AesirGrid authority to the canonical contract.
+    """Adapt existing AesirGrid authority to the canonical admission contract."""
 
-    The raw admission is retained only for this synchronous call so the
-    compatibility result can preserve the existing ``ControlledAdmission``
-    object without evaluating the authority twice.
-    """
-
-    def __init__(self) -> None:
+    def __init__(self, product: ProductDefinition | None = None) -> None:
+        self.product = product
         self.raw_admission: ControlledAdmission | None = None
 
     def admit(self, request: object) -> ExecutionAdmission:
@@ -46,6 +42,21 @@ class _AesirGridAdmissionAuthority:
             raise TypeError("AesirGrid authority requires ControlledActionRequest")
 
         raw = admit_controlled_action(request)
+
+        if raw.decision is AegisDecision.ALLOW and self.product is not None:
+            if self.product.product_id != request.product_id:
+                raw = ControlledAdmission(
+                    decision=AegisDecision.DENY,
+                    reason="product definition does not match execution request",
+                    lease_id=raw.lease_id,
+                )
+            elif self.product.lifecycle_state is not ProductLifecycle.AUTHORIZED:
+                raw = ControlledAdmission(
+                    decision=AegisDecision.DENY,
+                    reason="product must be AUTHORIZED before governed execution",
+                    lease_id=raw.lease_id,
+                )
+
         self.raw_admission = raw
         return ExecutionAdmission(
             decision=ExecutionDecision(raw.decision.value),
@@ -69,30 +80,13 @@ def execute_governed(
 ) -> GovernedExecutionResult:
     """Admit through the canonical seam before invoking the existing executor.
 
-    When a product definition is supplied, controlled execution additionally
-    requires the product to have crossed STAGED -> AUTHORIZED through the
-    explicit authority boundary. The optional argument preserves compatibility
-    with existing executor-neutral callers while allowing vertical case
-    studies to prove the full lifecycle boundary.
+    The AesirGrid authority is evaluated exactly once. Product lifecycle and
+    identity checks are part of that admission before the executor can run.
     """
 
-    if product is not None:
-        if product.product_id != request.product_id:
-            denied = ControlledAdmission(
-                decision=AegisDecision.DENY,
-                reason="product definition does not match execution request",
-                lease_id=request.lease.lease_id if request.lease is not None else None,
-            )
-            return GovernedExecutionResult(admission=denied, executed=False)
-        if product.lifecycle_state is not ProductLifecycle.AUTHORIZED:
-            denied = ControlledAdmission(
-                decision=AegisDecision.DENY,
-                reason="product must be AUTHORIZED before governed execution",
-                lease_id=request.lease.lease_id if request.lease is not None else None,
-            )
-            return GovernedExecutionResult(admission=denied, executed=False)
+    authority: ExecutionAdmissionAuthority = _AesirGridAdmissionAuthority(product)
+    authority_impl = authority
 
-    authority = _AesirGridAdmissionAuthority()
     try:
         result = execute_admitted(
             request,
@@ -100,18 +94,20 @@ def execute_governed(
             lambda _request: executor(),
         )
     except PermissionError:
-        if authority.raw_admission is None:
-            raise
+        raw_admission = authority_impl.raw_admission  # type: ignore[attr-defined]
+        if raw_admission is None:
+            raise RuntimeError("canonical admission failed without an admission result")
         return GovernedExecutionResult(
-            admission=authority.raw_admission,
+            admission=raw_admission,
             executed=False,
         )
 
-    if authority.raw_admission is None:
+    raw_admission = authority_impl.raw_admission  # type: ignore[attr-defined]
+    if raw_admission is None:
         raise RuntimeError("canonical admission completed without an admission result")
 
     return GovernedExecutionResult(
-        admission=authority.raw_admission,
+        admission=raw_admission,
         executed=True,
         result=result,
     )
