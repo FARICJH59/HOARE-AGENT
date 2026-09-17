@@ -84,8 +84,7 @@ def execute_governed(
     identity checks are part of that admission before the executor can run.
     """
 
-    authority: ExecutionAdmissionAuthority = _AesirGridAdmissionAuthority(product)
-    authority_impl = authority
+    authority = _AesirGridAdmissionAuthority(product)
 
     try:
         result = execute_admitted(
@@ -94,7 +93,7 @@ def execute_governed(
             lambda _request: executor(),
         )
     except PermissionError:
-        raw_admission = authority_impl.raw_admission  # type: ignore[attr-defined]
+        raw_admission = authority.raw_admission
         if raw_admission is None:
             raise RuntimeError("canonical admission failed without an admission result")
         return GovernedExecutionResult(
@@ -102,7 +101,7 @@ def execute_governed(
             executed=False,
         )
 
-    raw_admission = authority_impl.raw_admission  # type: ignore[attr-defined]
+    raw_admission = authority.raw_admission
     if raw_admission is None:
         raise RuntimeError("canonical admission completed without an admission result")
 
