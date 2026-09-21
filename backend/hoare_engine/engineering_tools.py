@@ -79,7 +79,9 @@ class EngineeringToolLLMSource:
                 ),
             },
         ]
-        if self._use_mock:\n            return _mock_engineering_tool_call()\n        return _call_llm(messages, use_mock=False)
+        if self._use_mock:
+            return _mock_engineering_tool_call()
+        return _call_llm(messages, use_mock=False)
 
 
 def default_engineering_tool_source() -> EngineeringToolLLMSource:
