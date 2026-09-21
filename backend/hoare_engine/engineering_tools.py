@@ -12,6 +12,17 @@ from typing import Mapping
 
 from .agent import _call_llm
 
+
+def _mock_engineering_tool_call() -> str:
+    return json.dumps({
+        "tool_name": "run_tests",
+        "arguments": {
+            "repository": "example/repo",
+            "command": ["pytest", "-q"],
+            "reason": "verify the requested engineering change",
+        },
+    })
+
 _TOOL_SYSTEM_PROMPT = """
 You are the reasoning component of the HOARE Engineering Agent.
 
@@ -68,7 +79,7 @@ class EngineeringToolLLMSource:
                 ),
             },
         ]
-        return _call_llm(messages, use_mock=self._use_mock)
+        if self._use_mock:\n            return _mock_engineering_tool_call()\n        return _call_llm(messages, use_mock=False)
 
 
 def default_engineering_tool_source() -> EngineeringToolLLMSource:
