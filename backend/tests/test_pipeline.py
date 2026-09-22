@@ -260,3 +260,24 @@ class TestHoareAgent:
         )
         result = agent.run_task(req)
         assert result.task_id == "my-fixed-id"
+
+
+    def test_production_agent_does_not_fallback_to_mock_when_llm_is_unavailable(self, monkeypatch):
+        """A live-agent outage must fail closed rather than fabricate a successful result."""
+        import json
+        import hoare_engine.agent as agent_module
+
+        def unavailable(_messages):
+            raise RuntimeError("simulated provider outage")
+
+        monkeypatch.setattr(agent_module, "_try_openai_call", unavailable)
+        agent = HoareAgent(use_mock_llm=False)
+        req = AgentTaskRequest(
+            task_id="llm-outage",
+            description="Test provider outage handling",
+            target_schema=json.dumps(TelemetryEvent.model_json_schema()),
+            max_retries=1,
+        )
+
+        with pytest.raises(agent_module.LLMUnavailableError):
+            agent.run_task(req)
