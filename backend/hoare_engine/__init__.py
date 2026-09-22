@@ -10,6 +10,7 @@ from hoare_engine.pda_engine import (
     registry,
 )
 from hoare_engine.agent import HoareAgent, AgentObserver, LoggingObserver
+from hoare_engine.engineering_tool_source import EngineeringToolCallSource
 
 __all__ = [
     "HoareVerifier",
@@ -24,4 +25,5 @@ __all__ = [
     "HoareAgent",
     "AgentObserver",
     "LoggingObserver",
+    "EngineeringToolCallSource",
 ]
