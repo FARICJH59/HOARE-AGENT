@@ -141,14 +141,18 @@ def _mock_llm_call(_messages: List[Dict[str, str]]) -> str:  # noqa: ARG001
     })
 
 
+class LLMUnavailableError(RuntimeError):
+    """Raised when the configured LLM cannot be reached or used."""
+
+
 def _call_llm(messages: List[Dict[str, str]], use_mock: bool = False) -> str:
     if use_mock:
         return _mock_llm_call(messages)
     try:
         return _try_openai_call(messages)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("LLM call failed (%s); falling back to mock.", exc)
-        return _mock_llm_call(messages)
+        logger.error("LLM call failed: %s", exc)
+        raise LLMUnavailableError("configured LLM unavailable") from exc
 
 
 # ---------------------------------------------------------------------------
