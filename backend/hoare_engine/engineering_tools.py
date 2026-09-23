@@ -9,7 +9,7 @@ by HOARE-CORE's LLMToolBridge.
 
 from __future__ import annotations
 
-from typing import Dict, List
+import json\nfrom typing import Dict, List
 
 from hoare_engine.agent import _call_llm
 
@@ -56,7 +56,7 @@ class HoareEngineeringToolSource:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("engineering_prompt_required")
 
-        messages: List[Dict[str, str]] = [
+        if self._use_mock:\n            return json.dumps({"tool_name": "run_tests", "arguments": {"repository": "example/repo", "command": ["pytest", "-q"], "reason": "deterministic engineering tool test"}})\n\n        messages: List[Dict[str, str]] = [
             {"role": "system", "content": _ENGINEERING_TOOL_SYSTEM_PROMPT},
             {"role": "user", "content": prompt.strip()},
         ]
